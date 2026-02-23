@@ -27,6 +27,8 @@ export const App = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [userEmail, setUserEmail] = useState<string | undefined>();
+  const [userId, setUserId] = useState<string | undefined>();
+  const [notesApiAvailable, setNotesApiAvailable] = useState(false);
   const [loginTime] = useState<number>(Date.now());
 
   // Toast notification state
@@ -86,6 +88,8 @@ export const App = () => {
         if (auth.signedIn) {
           setIsSignedIn(true);
           setUserEmail(auth.email);
+          setUserId(auth.user_id);
+          setNotesApiAvailable(!!auth.notesApiAvailable);
           const loadedPatients = await refreshPatients();
           // Validate stored patient selection — clear if patient no longer exists
           const storedId = sessionStorage.getItem('halo_selectedPatientId');
@@ -256,6 +260,8 @@ export const App = () => {
             onDataChange={refreshPatients}
             onToast={showToast}
             customTemplate={userSettings?.noteTemplate === 'custom' ? userSettings.customTemplateContent : undefined}
+            userId={userId}
+            notesApiAvailable={notesApiAvailable}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-300 relative overflow-hidden">
@@ -297,6 +303,8 @@ export const App = () => {
         settings={userSettings}
         onSave={handleSaveSettings}
         userEmail={userEmail}
+        userId={userId}
+        notesApiAvailable={notesApiAvailable}
         loginTime={loginTime}
       />
 

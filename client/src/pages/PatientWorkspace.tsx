@@ -5,7 +5,7 @@ import { AppStatus, FOLDER_MIME_TYPE } from '../../../shared/types';
 import {
   fetchFiles, fetchFolderContents, uploadFile, saveNote, updatePatient,
   updateFileMetadata, generatePatientSummary, analyzeAndRenameImage,
-  extractLabAlerts, deleteFile, createFolder, askHaloStream,
+  extractLabAlerts, deleteFile, createFolder, askHaloStream, generateNote,
 } from '../services/api';
 import {
   Upload, Calendar, Clock, CheckCircle2, ChevronLeft, Loader2,
@@ -21,15 +21,19 @@ import { NoteEditor } from '../components/NoteEditor';
 import { PatientChat } from '../components/PatientChat';
 import { getErrorMessage } from '../utils/formatting';
 
+const LAST_TEMPLATE_KEY = 'halo_lastTemplateId';
+
 interface Props {
   patient: Patient;
   onBack: () => void;
   onDataChange: () => void;
   onToast: (message: string, type: 'success' | 'error' | 'info') => void;
   customTemplate?: string;
+  userId?: string;
+  notesApiAvailable?: boolean;
 }
 
-export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChange, onToast, customTemplate }) => {
+export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChange, onToast, customTemplate, userId, notesApiAvailable }) => {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [summary, setSummary] = useState<string[]>([]);
   const [alerts, setAlerts] = useState<LabAlert[]>([]);
@@ -79,6 +83,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   const [uploadTargetLabel, setUploadTargetLabel] = useState<string>(patient.name);
   const [uploadPickerFolders, setUploadPickerFolders] = useState<DriveFile[]>([]);
   const [uploadPickerLoading, setUploadPickerLoading] = useState(false);
+  const [generateNoteLoading, setGenerateNoteLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -323,6 +328,44 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
     setEditMode('write');
   };
 
+  const handleGenerateFromTemplate = async () => {
+    if (!userId) {
+      onToast('Sign in required to generate from template.', 'error');
+      return;
+    }
+    const templateId = typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_TEMPLATE_KEY) : null;
+    if (!templateId) {
+      onToast('Select a template in Settings first.', 'error');
+      return;
+    }
+    setGenerateNoteLoading(true);
+    try {
+      const result = await generateNote({
+        user_id: userId,
+        template_id: templateId,
+        text: noteContent,
+        return_type: 'note',
+      });
+      if (result.content != null) {
+        setNoteContent(result.content);
+        setEditMode('write');
+        onToast('Note generated from template. Edit and save when ready.', 'success');
+      } else if (result.blob) {
+        const url = URL.createObjectURL(result.blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'note.docx';
+        a.click();
+        URL.revokeObjectURL(url);
+        onToast('DOCX downloaded.', 'success');
+      }
+    } catch (err) {
+      onToast(getErrorMessage(err), 'error');
+    } finally {
+      setGenerateNoteLoading(false);
+    }
+  };
+
   // Chat handler — uses streaming for progressive response display
   const handleSendChat = async () => {
     const question = chatInput.trim();
@@ -564,6 +607,9 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
               onEditModeChange={setEditMode}
               status={status}
               onSave={handleSaveNote}
+              onGenerateFromTemplate={handleGenerateFromTemplate}
+              generateLoading={generateNoteLoading}
+              showGenerateButton={!!notesApiAvailable}
             />
           ) : (
             <PatientChat

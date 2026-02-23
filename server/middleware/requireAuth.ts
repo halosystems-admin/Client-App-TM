@@ -8,6 +8,7 @@ declare module 'express-session' {
     refreshToken?: string;
     tokenExpiry?: number;
     userEmail?: string;
+    userId?: string;
   }
 }
 

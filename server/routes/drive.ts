@@ -5,12 +5,14 @@ import {
   driveRequest,
   getHaloRootFolder,
   getOrCreatePatientNotesFolder,
+  uploadToDrive,
   sanitizeString,
   isValidDate,
   isValidSex,
   parseFolderString,
   parsePatientFolder,
 } from '../services/drive';
+import { textToDocx } from '../utils/docx';
 import { recoverPendingJobs, runSchedulerNow, getSchedulerStatus } from '../jobs/scheduler';
 
 const router = Router();
@@ -110,8 +112,9 @@ router.get('/scheduler-status', async (_req: Request, res: Response) => {
     const pendingJobs = status.jobs.filter(j => j.status !== 'done');
     const dueJobs = pendingJobs.filter(j => {
       const elapsed = Date.now() - new Date(j.savedAt).getTime();
-      if (j.status === 'pending_docx') return elapsed >= 10 * 60 * 60 * 1000;
-      if (j.status === 'pending_pdf') return elapsed >= 24 * 60 * 60 * 1000;
+      const tenHoursMs = 10 * 60 * 60 * 1000;
+      if (j.status === 'pending_docx') return elapsed >= tenHoursMs;
+      if (j.status === 'pending_pdf') return elapsed >= tenHoursMs;
       return false;
     });
     res.json({
@@ -560,54 +563,35 @@ router.post('/patients/:id/note', async (req: Request, res: Response) => {
     const patientNotesFolderId = await getOrCreatePatientNotesFolder(token, patientId);
 
     const savedAt = new Date().toISOString();
-    const fileName = `Clinical_Note_${savedAt.split('T')[0]}.txt`;
+    const noteDate = savedAt.split('T')[0];
+    const baseTitle = `Clinical_Note_${noteDate}`;
+    const fileName = `${baseTitle}.docx`;
 
-    const metadata = {
-      name: fileName,
-      parents: [patientNotesFolderId],
-      mimeType: 'text/plain',
-      appProperties: {
+    const docxBuffer = await textToDocx(content, baseTitle);
+    const docxFileId = await uploadToDrive(
+      token,
+      fileName,
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      patientNotesFolderId,
+      docxBuffer,
+      {
         savedAt,
-        conversionStatus: 'pending_docx',
+        conversionStatus: 'pending_pdf',
         patientFolderId: patientNotesFolderId,
-      },
-    };
+      }
+    );
 
-    const boundary = 'halo_note_boundary';
-    const metaPart = JSON.stringify(metadata);
-
-    const bodyBuffer = Buffer.concat([
-      Buffer.from(
-        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metaPart}\r\n` +
-        `--${boundary}\r\nContent-Type: text/plain\r\n\r\n${content}\r\n` +
-        `--${boundary}--`
-      ),
-    ]);
-
-    const uploadRes = await fetch(`${uploadApi}/files?uploadType=multipart`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': `multipart/related; boundary=${boundary}`,
-      },
-      body: bodyBuffer,
-    });
-
-    const fileData = (await uploadRes.json()) as { id: string };
-
-    // Register with scheduler — store refreshToken so the scheduler can
-    // obtain a fresh access token when the conversion runs (10-24 hours later)
+    // Register with scheduler — convert this DOCX to PDF after 10 hours
     const { registerConversionJob } = await import('../jobs/scheduler');
     registerConversionJob({
-      fileId: fileData.id,
+      fileId: docxFileId,
       patientFolderId: patientNotesFolderId,
       savedAt,
-      status: 'pending_docx',
+      status: 'pending_pdf',
       refreshToken: req.session.refreshToken || '',
     });
 
     // Update lastNoteDate on the patient folder so "Last" date reflects the latest note
-    const noteDate = savedAt.split('T')[0];
     fetch(`${driveApi}/files/${patientId}`, {
       method: 'PATCH',
       headers: {

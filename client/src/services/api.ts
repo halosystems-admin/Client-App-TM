@@ -1,4 +1,7 @@
-import type { Patient, DriveFile, LabAlert, ChatMessage, UserSettings } from '../../../shared/types';
+import type {
+  Patient, DriveFile, LabAlert, ChatMessage, UserSettings,
+  TemplateItem, TemplateListResponse, GenerateNoteParams,
+} from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -48,7 +51,8 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
 
 // --- AUTH ---
 export const getLoginUrl = () => request<{ url: string }>('/api/auth/login-url');
-export const checkAuth = () => request<{ signedIn: boolean; email?: string }>('/api/auth/me');
+export const checkAuth = () =>
+  request<{ signedIn: boolean; email?: string; user_id?: string; notesApiAvailable?: boolean }>('/api/auth/me');
 export const logout = () => request('/api/auth/logout', { method: 'POST' });
 
 /** Run note conversion scheduler now (txt→docx after 10h, docx→pdf after 24h). Requires jobs to be due. */
@@ -295,6 +299,85 @@ export const askHaloStream = async (
     clearTimeout(timeoutId);
   }
 };
+
+// --- NOTES / TEMPLATES (via Express proxy when NOTES_API_URL is set) ---
+const NOTES_BASE = `${API_BASE}/api/notes`;
+
+/** Normalize API response to TemplateItem[] (handles { templates: [...] } or array or object of id->template). */
+function normalizeTemplates(raw: unknown): TemplateItem[] {
+  const str = (v: unknown): string | undefined =>
+    v === null || v === undefined ? undefined : String(v);
+  if (Array.isArray(raw)) {
+    return raw.map((t) => ({
+      id: typeof t?.id === 'string' ? t.id : String(t?.id ?? ''),
+      name: str((t as Record<string, unknown>)?.name ?? (t as Record<string, unknown>)?.label),
+      label: str((t as Record<string, unknown>)?.label ?? (t as Record<string, unknown>)?.name),
+      type: (t as Record<string, unknown>)?.type as string | undefined,
+      ...(typeof t === 'object' && t !== null ? (t as Record<string, unknown>) : {}),
+    }));
+  }
+  if (raw && typeof raw === 'object' && 'templates' in (raw as Record<string, unknown>)) {
+    return normalizeTemplates((raw as { templates: unknown }).templates);
+  }
+  if (raw && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>;
+    return Object.entries(obj).map(([id, t]) => {
+      const row = typeof t === 'object' && t !== null ? (t as Record<string, unknown>) : {};
+      return {
+        id,
+        name: str(row.name ?? row.label) ?? id,
+        label: str(row.label ?? row.name) ?? id,
+        type: row.type as string | undefined,
+        ...row,
+      };
+    });
+  }
+  return [];
+}
+
+export async function getTemplates(userId: string): Promise<TemplateListResponse> {
+  const data = await request<unknown>(`${NOTES_BASE}/get_templates`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId }),
+  });
+  return normalizeTemplates(data);
+}
+
+export async function generateNote(params: GenerateNoteParams): Promise<{ content?: string; blob?: Blob }> {
+  const { return_type } = params;
+  const res = await fetch(`${NOTES_BASE}/generate_note`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (res.status === 401) {
+    window.location.href = '/';
+    throw new ApiError('Not authenticated', 401);
+  }
+  const contentType = res.headers.get('content-type') || '';
+  if (return_type === 'docx' && (contentType.includes('octet-stream') || contentType.includes('wordprocessing'))) {
+    const blob = await res.blob();
+    return { blob };
+  }
+  const text = await res.text();
+  if (!res.ok) {
+    let msg = text;
+    try {
+      const j = JSON.parse(text) as { error?: string };
+      if (j.error) msg = j.error;
+    } catch {
+      // use text as-is
+    }
+    throw new ApiError(msg, res.status);
+  }
+  try {
+    const json = JSON.parse(text) as { content?: string };
+    return { content: json.content ?? text };
+  } catch {
+    return { content: text };
+  }
+}
 
 // --- SETTINGS ---
 export const loadSettings = () =>

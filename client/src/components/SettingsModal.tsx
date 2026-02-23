@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { UserSettings } from '../../../shared/types';
+import type { UserSettings, TemplateItem } from '../../../shared/types';
 import {
   X, Pencil, Save, User, Clock, Briefcase, MapPin, GraduationCap,
-  FileText, Upload, Check, AlertCircle, RefreshCw,
+  FileText, Upload, Check, AlertCircle, RefreshCw, Loader2,
 } from 'lucide-react';
-import { runSchedulerNow } from '../services/api';
+import { runSchedulerNow, getTemplates } from '../services/api';
+
+const LAST_TEMPLATE_KEY = 'halo_lastTemplateId';
 
 const DEFAULT_SETTINGS: UserSettings = {
   firstName: '',
@@ -25,28 +27,66 @@ interface Props {
   settings: UserSettings | null;
   onSave: (settings: UserSettings) => Promise<void>;
   userEmail?: string;
+  userId?: string;
+  notesApiAvailable?: boolean;
   loginTime: number;
 }
 
+type TemplateSource = 'soap' | 'custom' | 'practice';
+
 export const SettingsModal: React.FC<Props> = ({
-  isOpen, onClose, settings, onSave, userEmail, loginTime,
+  isOpen, onClose, settings, onSave, userEmail, userId, notesApiAvailable, loginTime,
 }) => {
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState<UserSettings>(settings || DEFAULT_SETTINGS);
   const [saving, setSaving] = useState(false);
   const [elapsed, setElapsed] = useState('');
-  const [templateTab, setTemplateTab] = useState<'soap' | 'custom'>(settings?.noteTemplate || 'soap');
+  const [templateTab, setTemplateTab] = useState<TemplateSource>(
+    (settings?.noteTemplate === 'custom' ? 'custom' : 'soap') as TemplateSource
+  );
   const [uploadError, setUploadError] = useState('');
   const [schedulerRunning, setSchedulerRunning] = useState(false);
   const [schedulerMessage, setSchedulerMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // From practice: templates from FastAPI
+  const [practiceTemplates, setPracticeTemplates] = useState<TemplateItem[]>([]);
+  const [practiceTemplatesLoading, setPracticeTemplatesLoading] = useState(false);
+  const [selectedPracticeTemplateId, setSelectedPracticeTemplateId] = useState<string | null>(() =>
+    typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_TEMPLATE_KEY) : null
+  );
+
   useEffect(() => {
     if (settings) {
       setForm(settings);
-      setTemplateTab(settings.noteTemplate);
+      setTemplateTab((settings.noteTemplate === 'custom' ? 'custom' : 'soap') as TemplateSource);
     }
   }, [settings]);
+
+  // Fetch practice templates when modal opens and Notes API is available
+  useEffect(() => {
+    if (!isOpen || !notesApiAvailable || !userId) return;
+    setPracticeTemplatesLoading(true);
+    getTemplates(userId)
+      .then((list) => {
+        setPracticeTemplates(list);
+        if (list.length === 1) {
+          setSelectedPracticeTemplateId(list[0].id);
+          localStorage.setItem(LAST_TEMPLATE_KEY, list[0].id);
+        } else if (list.length > 1) {
+          const last = localStorage.getItem(LAST_TEMPLATE_KEY);
+          const found = list.some((t) => t.id === last);
+          if (found && last) {
+            setSelectedPracticeTemplateId(last);
+          } else {
+            setSelectedPracticeTemplateId(list[0].id);
+            localStorage.setItem(LAST_TEMPLATE_KEY, list[0].id);
+          }
+        }
+      })
+      .catch(() => setPracticeTemplates([]))
+      .finally(() => setPracticeTemplatesLoading(false));
+  }, [isOpen, notesApiAvailable, userId]);
 
   // Session timer
   useEffect(() => {
@@ -69,7 +109,8 @@ export const SettingsModal: React.FC<Props> = ({
     if (editMode && requiredFieldsMissing) return;
     setSaving(true);
     try {
-      const updated = { ...form, noteTemplate: templateTab };
+      const noteTemplate: 'soap' | 'custom' = templateTab === 'custom' ? 'custom' : 'soap';
+      const updated: UserSettings = { ...form, noteTemplate };
       await onSave(updated);
       setForm(updated);
       setEditMode(false);
@@ -77,6 +118,11 @@ export const SettingsModal: React.FC<Props> = ({
       // Error handled by parent
     }
     setSaving(false);
+  };
+
+  const handleSelectPracticeTemplate = (templateId: string) => {
+    setSelectedPracticeTemplateId(templateId);
+    localStorage.setItem(LAST_TEMPLATE_KEY, templateId);
   };
 
   const handleTemplateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -310,10 +356,10 @@ export const SettingsModal: React.FC<Props> = ({
             </h3>
             <p className="text-xs text-slate-400 mb-3">Choose how HALO generates clinical notes from scribe dictation.</p>
 
-            <div className="flex bg-slate-100 p-1 rounded-xl mb-4">
+            <div className="flex bg-slate-100 p-1 rounded-xl mb-4 flex-wrap gap-1">
               <button
                 onClick={() => { setTemplateTab('soap'); setForm(prev => ({ ...prev, noteTemplate: 'soap' })); }}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 min-w-0 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                   templateTab === 'soap' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
@@ -321,13 +367,51 @@ export const SettingsModal: React.FC<Props> = ({
               </button>
               <button
                 onClick={() => setTemplateTab('custom')}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 min-w-0 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                   templateTab === 'custom' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 {templateTab === 'custom' && <Check size={12} />} Custom Template
               </button>
+              {notesApiAvailable && (
+                <button
+                  onClick={() => setTemplateTab('practice')}
+                  className={`flex-1 min-w-0 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    templateTab === 'practice' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {templateTab === 'practice' && <Check size={12} />} From practice
+                </button>
+              )}
             </div>
+
+            {templateTab === 'practice' && (
+              <div className="mb-4">
+                {practiceTemplatesLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
+                    <Loader2 size={16} className="animate-spin" /> Loading templates…
+                  </div>
+                ) : practiceTemplates.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-2">No templates from your practice. Configure NOTES_API_URL on the server.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {practiceTemplates.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => handleSelectPracticeTemplate(t.id)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                          selectedPracticeTemplateId === t.id
+                            ? 'bg-teal-600 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {t.name ?? t.label ?? t.id}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {templateTab === 'soap' ? (
               <div className="bg-teal-50 border border-teal-100 rounded-xl p-4">
@@ -406,7 +490,7 @@ export const SettingsModal: React.FC<Props> = ({
         </div>
 
         {/* Footer with Save */}
-        {editMode || templateTab !== (settings?.noteTemplate || 'soap') || form.customTemplateContent !== (settings?.customTemplateContent || '') ? (
+        {editMode || ((templateTab === 'soap' || templateTab === 'custom') && templateTab !== (settings?.noteTemplate || 'soap')) || form.customTemplateContent !== (settings?.customTemplateContent || '') ? (
           <div className="border-t border-slate-100 p-4 bg-slate-50 flex gap-3">
             <button
               onClick={() => {

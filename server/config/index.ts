@@ -37,4 +37,7 @@ export const config = {
   // Drive API
   driveApi: 'https://www.googleapis.com/drive/v3',
   uploadApi: 'https://www.googleapis.com/upload/drive/v3',
+
+  // Notes / templates (optional FastAPI backend)
+  notesApiUrl: process.env.NOTES_API_URL || '',
 } as const;

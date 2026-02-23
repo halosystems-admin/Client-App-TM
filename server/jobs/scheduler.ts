@@ -1,7 +1,7 @@
 /**
  * HALO Scheduler - In-memory job queue for clinical note conversion
  *
- * Flow: .txt (saved) → .docx (after 10 hours) → .pdf (after 24 hours)
+ * Flow: save as .docx → .pdf after 10h. Legacy: .txt → .docx after 10h → .pdf after 10h.
  *
  * Uses Google Drive appProperties on files to track conversion state,
  * so pending jobs can be recovered on server restart.
@@ -9,17 +9,17 @@
  * Tokens: Jobs store a refreshToken and obtain a fresh accessToken
  * just before each conversion, avoiding the stale-token problem
  * (Google access tokens expire after ~1 hour, but conversions run
- * 10-24 hours after job registration).
+ * 10 hours after job registration).
  */
 
-import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 import { config } from '../config';
 import { uploadToDrive, downloadTextFromDrive } from '../services/drive';
+import { textToDocx } from '../utils/docx';
 
 const { driveApi, uploadApi } = config;
 
-const DOCX_DELAY_MS = 10 * 60 * 60 * 1000; // 10 hours
-const PDF_DELAY_MS = 24 * 60 * 60 * 1000;   // 24 hours
+const DOCX_DELAY_MS = 10 * 60 * 60 * 1000; // 10 hours (legacy TXT → DOCX)
+const PDF_DELAY_MS = 10 * 60 * 60 * 1000;  // 10 hours (DOCX → PDF)
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;     // Check every 5 minutes
 const MAX_RETRIES = 5;
 
@@ -79,8 +79,8 @@ export function registerConversionJob(job: ConversionJob): void {
 /**
  * Recover pending conversion jobs from Google Drive appProperties.
  * Called once on the first authenticated request after server restart.
- * Scans the user's entire Halo_Patients folder tree for .txt files
- * with conversionStatus = 'pending_docx' or 'pending_pdf'.
+ * Scans for .txt files with pending_docx/pending_pdf (legacy) and
+ * .docx files with pending_pdf (new flow).
  *
  * Requires both a current accessToken (to query Drive) and a refreshToken
  * (to store in recovered jobs for later use during conversion).
@@ -144,6 +144,37 @@ export async function recoverPendingJobs(accessToken: string, refreshToken: stri
       }
     }
 
+    // Recover DOCX files with pending_pdf (new flow: save as DOCX, convert to PDF after 10h)
+    const docxQuery = encodeURIComponent(
+      `mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document' and trashed=false and appProperties has { key='conversionStatus' and value='pending_pdf' }`
+    );
+    const docxRes = await fetch(
+      `${driveApi}/files?q=${docxQuery}&fields=files(id,name,appProperties)&pageSize=100`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (docxRes.ok) {
+      const docxData = (await docxRes.json()) as { files?: Array<{ id: string; name: string; appProperties?: Record<string, string> }> };
+      const docxFiles = docxData.files || [];
+      for (const file of docxFiles) {
+        if (jobQueue.has(file.id)) continue;
+        const props = file.appProperties || {};
+        const savedAt = props.savedAt;
+        const patientFolderId = props.patientFolderId;
+        if (!savedAt || !patientFolderId) continue;
+        const job: ConversionJob = {
+          fileId: file.id,
+          patientFolderId,
+          savedAt,
+          status: 'pending_pdf',
+          refreshToken,
+          retryCount: 0,
+        };
+        jobQueue.set(file.id, job);
+        recovered++;
+        console.log(`[Scheduler] Recovered DOCX job: ${file.name} (${file.id}) — saved: ${savedAt}`);
+      }
+    }
+
     if (recovered > 0) {
       console.log(`[Scheduler] Recovered ${recovered} pending job(s). Processing immediately...`);
       processJobs().catch(err => {
@@ -158,70 +189,6 @@ export async function recoverPendingJobs(accessToken: string, refreshToken: stri
   }
 
   return recovered;
-}
-
-/**
- * Convert plain text content to a .docx buffer
- */
-async function textToDocx(textContent: string, fileName: string): Promise<Buffer> {
-  const lines = textContent.split('\n');
-  const children: Paragraph[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-
-    if (trimmed.startsWith('## ')) {
-      children.push(
-        new Paragraph({
-          children: [new TextRun({ text: trimmed.replace('## ', ''), bold: true, size: 28 })],
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 240, after: 120 },
-        })
-      );
-    } else if (trimmed.startsWith('# ')) {
-      children.push(
-        new Paragraph({
-          children: [new TextRun({ text: trimmed.replace('# ', ''), bold: true, size: 32 })],
-          heading: HeadingLevel.HEADING_1,
-          spacing: { before: 360, after: 120 },
-        })
-      );
-    } else if (trimmed === '') {
-      children.push(new Paragraph({ children: [] }));
-    } else {
-      const parts = trimmed.split(/(\*\*.*?\*\*)/g);
-      const runs: TextRun[] = parts.map(part => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return new TextRun({ text: part.slice(2, -2), bold: true, size: 22, font: 'Calibri' });
-        }
-        return new TextRun({ text: part, size: 22, font: 'Calibri' });
-      });
-      children.push(new Paragraph({ children: runs, spacing: { after: 80 } }));
-    }
-  }
-
-  const doc = new Document({
-    sections: [{
-      properties: {},
-      children: [
-        new Paragraph({
-          children: [new TextRun({ text: fileName.replace('.txt', ''), bold: true, size: 28, font: 'Calibri' })],
-          heading: HeadingLevel.TITLE,
-          spacing: { after: 240 },
-        }),
-        new Paragraph({
-          children: [new TextRun({
-            text: `Generated by HALO on ${new Date().toLocaleDateString()}`,
-            italics: true, size: 18, font: 'Calibri', color: '888888',
-          })],
-          spacing: { after: 360 },
-        }),
-        ...children,
-      ],
-    }],
-  });
-
-  return Buffer.from(await Packer.toBuffer(doc));
 }
 
 /**
@@ -324,7 +291,7 @@ async function processJobs(): Promise<void> {
         const fileInfo = (await fileInfoRes.json()) as { name: string };
         const baseName = fileInfo.name.replace('.txt', '');
 
-        const docxBuffer = await textToDocx(textContent, fileInfo.name);
+        const docxBuffer = await textToDocx(textContent, baseName);
 
         const docxFileId = await uploadToDrive(
           token,
@@ -351,10 +318,11 @@ async function processJobs(): Promise<void> {
           }),
         });
         if (!patchRes.ok) console.warn(`[Scheduler] Failed to update appProperties for ${fileId}`);
-      } else if (job.status === 'pending_pdf' && elapsed >= PDF_DELAY_MS && job.docxFileId) {
-        console.log(`[Scheduler] Converting ${job.docxFileId} to PDF...`);
+      } else if (job.status === 'pending_pdf' && elapsed >= PDF_DELAY_MS) {
+        const docxId = job.docxFileId ?? job.fileId;
+        console.log(`[Scheduler] Converting ${docxId} to PDF...`);
 
-        const fileInfoRes = await fetch(`${driveApi}/files/${job.docxFileId}?fields=name`, {
+        const fileInfoRes = await fetch(`${driveApi}/files/${docxId}?fields=name`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!fileInfoRes.ok) throw new Error(`Failed to fetch docx file info (${fileInfoRes.status})`);
@@ -363,13 +331,13 @@ async function processJobs(): Promise<void> {
 
         const pdfFileId = await convertDocxToPdf(
           token,
-          job.docxFileId,
+          docxId,
           job.patientFolderId,
           baseName
         );
 
         job.status = 'done';
-        console.log(`[Scheduler] PDF created: ${pdfFileId} for docx ${job.docxFileId}`);
+        console.log(`[Scheduler] PDF created: ${pdfFileId} for docx ${docxId}`);
 
         const patchRes = await fetch(`${driveApi}/files/${fileId}`, {
           method: 'PATCH',

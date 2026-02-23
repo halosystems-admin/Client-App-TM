@@ -62,3 +62,26 @@ export interface UserSettings {
   customTemplateContent: string;
   customTemplateName: string;
 }
+
+// --- Notes / templates (FastAPI) ---
+export interface TemplateItem {
+  id: string;
+  name?: string;
+  label?: string;
+  type?: string;
+  [key: string]: unknown;
+}
+
+/** Normalized list of templates for UI (from get_templates response). */
+export type TemplateListResponse = TemplateItem[];
+
+export interface GenerateNoteParams {
+  user_id: string;
+  template_id: string;
+  text: string;
+  return_type: 'note' | 'docx';
+}
+
+export interface GenerateNoteResponse {
+  content?: string;
+}

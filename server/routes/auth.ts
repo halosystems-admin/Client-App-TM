@@ -85,8 +85,10 @@ router.get('/callback', async (req: Request, res: Response) => {
     const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
-    const user = (await userInfoRes.json()) as { email?: string };
+    const user = (await userInfoRes.json()) as { email?: string; id?: string };
     req.session.userEmail = user.email;
+    // Stable user_id for Notes API / Firebase: prefer id, fallback to email
+    req.session.userId = user.id || user.email || '';
 
     console.log(`User signed in: ${user.email}`);
 
@@ -99,7 +101,12 @@ router.get('/callback', async (req: Request, res: Response) => {
 
 router.get('/me', (req: Request, res: Response) => {
   if (req.session.accessToken) {
-    res.json({ signedIn: true, email: req.session.userEmail });
+    res.json({
+      signedIn: true,
+      email: req.session.userEmail,
+      user_id: req.session.userId || req.session.userEmail || '',
+      notesApiAvailable: !!config.notesApiUrl,
+    });
   } else {
     res.json({ signedIn: false });
   }

@@ -7,6 +7,7 @@ import { config } from './config';
 import authRoutes from './routes/auth';
 import driveRoutes from './routes/drive';
 import aiRoutes from './routes/ai';
+import notesProxyRoutes from './routes/notesProxy';
 import { startScheduler } from './jobs/scheduler';
 
 const app = express();
@@ -61,6 +62,7 @@ app.use(session({
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/drive', driveRoutes);
 app.use('/api/ai', aiLimiter, aiRoutes);
+app.use('/api/notes', notesProxyRoutes);
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {
