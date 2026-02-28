@@ -3,7 +3,20 @@ import { Sidebar } from './components/Sidebar';
 import { PatientWorkspace } from './pages/PatientWorkspace';
 import { Toast } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
-import { checkAuth, getLoginUrl, logout, fetchAllPatients, createPatient, deletePatient, loadSettings, saveSettings, getSchedulerStatus, runSchedulerNow, ApiError } from './services/api';
+import { CalendarModal } from './components/CalendarModal';
+import {
+  checkAuth,
+  getLoginUrl,
+  logout,
+  fetchAllPatients,
+  createPatient,
+  deletePatient,
+  loadSettings,
+  saveSettings,
+  getSchedulerStatus,
+  runSchedulerNow,
+  ApiError,
+} from './services/api';
 import type { Patient, UserSettings } from '../../shared/types';
 import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, Clock, Play } from 'lucide-react';
 
@@ -46,6 +59,9 @@ export const App = () => {
   // Scheduler prompt state
   const [schedulerPrompt, setSchedulerPrompt] = useState<{ pending: number; due: number } | null>(null);
   const [schedulerRunning, setSchedulerRunning] = useState(false);
+
+  // Calendar modal state
+  const [showCalendar, setShowCalendar] = useState(false);
 
   // Persist selected patient to sessionStorage so it survives page refresh
   // Also track recently opened patients in localStorage
@@ -247,6 +263,7 @@ export const App = () => {
           onDeletePatient={handleDeleteRequest}
           onLogout={handleLogout}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenCalendar={() => setShowCalendar(true)}
           userEmail={userEmail}
           userSettings={userSettings}
         />
@@ -306,6 +323,13 @@ export const App = () => {
         userId={userId}
         notesApiAvailable={notesApiAvailable}
         loginTime={loginTime}
+      />
+
+      {/* CALENDAR MODAL */}
+      <CalendarModal
+        isOpen={showCalendar}
+        onClose={() => setShowCalendar(false)}
+        userEmail={userEmail}
       />
 
       {/* CREATE PATIENT MODAL */}

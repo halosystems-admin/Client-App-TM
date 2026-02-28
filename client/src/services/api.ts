@@ -1,6 +1,12 @@
 import type {
-  Patient, DriveFile, LabAlert, ChatMessage, UserSettings,
-  TemplateItem, TemplateListResponse, GenerateNoteParams,
+  Patient,
+  DriveFile,
+  LabAlert,
+  ChatMessage,
+  UserSettings,
+  TemplateItem,
+  TemplateListResponse,
+  GenerateNoteParams,
 } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -388,6 +394,49 @@ export const saveSettings = (settings: UserSettings) =>
     method: 'PUT',
     body: JSON.stringify(settings),
   });
+
+// --- CALENDAR ---
+
+export interface CalendarEventDto {
+  id: string;
+  summary?: string;
+  description?: string;
+  htmlLink?: string;
+  location?: string;
+  start?: { dateTime: string; timeZone?: string };
+  end?: { dateTime: string; timeZone?: string };
+}
+
+export const fetchCalendarEvents = async (params: {
+  timeMin?: string;
+  timeMax?: string;
+  maxResults?: number;
+}): Promise<CalendarEventDto[]> => {
+  const searchParams = new URLSearchParams();
+  if (params.timeMin) searchParams.set('timeMin', params.timeMin);
+  if (params.timeMax) searchParams.set('timeMax', params.timeMax);
+  if (params.maxResults) searchParams.set('maxResults', String(params.maxResults));
+
+  const data = await request<{ events: CalendarEventDto[] }>(
+    `/api/calendar/events${searchParams.toString() ? `?${searchParams.toString()}` : ''}`,
+  );
+  return data.events;
+};
+
+export const createCalendarEvent = async (payload: {
+  summary: string;
+  description?: string;
+  startDateTime: string;
+  endDateTime: string;
+  timeZone?: string;
+  location?: string;
+}): Promise<CalendarEventDto> => {
+  const data = await request<{ event: CalendarEventDto }>('/api/calendar/events', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return data.event;
+};
 
 // --- UTILS ---
 function fileToBase64(file: File): Promise<string> {

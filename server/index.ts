@@ -3,14 +3,19 @@ import cors from 'cors';
 import session from 'express-session';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
+import helmet from 'helmet';
+import FileStoreFactory from 'session-file-store';
 import { config } from './config';
 import authRoutes from './routes/auth';
 import driveRoutes from './routes/drive';
 import aiRoutes from './routes/ai';
 import notesProxyRoutes from './routes/notesProxy';
+import calendarRoutes from './routes/calendar';
+import { requireAuth } from './middleware/requireAuth';
 import { startScheduler } from './jobs/scheduler';
 
 const app = express();
+const FileStore = FileStoreFactory(session);
 
 // --- Global Rate Limiter ---
 const globalLimiter = rateLimit({
@@ -41,12 +46,20 @@ const authLimiter = rateLimit({
 
 // --- MIDDLEWARE ---
 app.use(globalLimiter);
+app.use(helmet());
 app.use(cors({
   origin: config.clientUrl,
   credentials: true,
 }));
 app.use(express.json({ limit: '50mb' }));
+
+const sessionStore = new FileStore({
+  path: path.join(__dirname, '../sessions'),
+  retries: 1,
+});
+
 app.use(session({
+  store: sessionStore,
   secret: config.sessionSecret,
   resave: false,
   saveUninitialized: false,
@@ -60,9 +73,10 @@ app.use(session({
 
 // --- ROUTES ---
 app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/drive', driveRoutes);
-app.use('/api/ai', aiLimiter, aiRoutes);
-app.use('/api/notes', notesProxyRoutes);
+app.use('/api/drive', requireAuth, driveRoutes);
+app.use('/api/ai', aiLimiter, requireAuth, aiRoutes);
+app.use('/api/notes', requireAuth, notesProxyRoutes);
+app.use('/api/calendar', requireAuth, calendarRoutes);
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {

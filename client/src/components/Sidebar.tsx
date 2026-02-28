@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Patient, UserSettings } from '../../../shared/types';
-import { Plus, LogOut, Search, Trash2, ChevronRight, Users, Clock, Settings, Loader2 } from 'lucide-react';
+import { Plus, LogOut, Search, Trash2, ChevronRight, Users, Clock, Settings, Loader2, Calendar } from 'lucide-react';
 import { searchPatientsByConcept } from '../services/api';
 
 interface SidebarProps {
@@ -12,6 +12,7 @@ interface SidebarProps {
   onDeletePatient: (patient: Patient) => void;
   onLogout: () => void;
   onOpenSettings: () => void;
+  onOpenCalendar: () => void;
   userEmail?: string;
   userSettings?: UserSettings | null;
 }
@@ -25,6 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeletePatient,
   onLogout,
   onOpenSettings,
+  onOpenCalendar,
   userEmail,
   userSettings,
 }) => {
@@ -119,7 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <div className="w-80 bg-slate-900 h-full flex flex-col text-slate-300 border-r border-slate-800 shadow-2xl">
       <div className="p-6">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-teal-900/20">
               <img src="/halo-icon.png" alt="HALO" className="w-full h-full object-cover" draggable={false} />
@@ -137,6 +139,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <Settings size={20} />
           </button>
         </div>
+        <button
+          onClick={onOpenCalendar}
+          className="w-full mb-4 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-800 text-sm font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition-all border border-slate-700/60"
+          title="Open Calendar"
+        >
+          <Calendar size={18} className="text-teal-400 shrink-0" />
+          <span>Calendar</span>
+        </button>
         <div className="relative group">
           <Search className="absolute left-3 top-3 text-slate-500 group-focus-within:text-teal-400 transition-colors" size={18} />
           <input

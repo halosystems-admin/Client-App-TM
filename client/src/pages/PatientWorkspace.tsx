@@ -132,6 +132,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   }, []);
 
   // Initial load + AI summary (only at root patient folder)
+  // Initial load + AI summary (only at root patient folder)
   useEffect(() => {
     let isMounted = true;
 
@@ -157,21 +158,45 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
           return;
         }
 
-        generatePatientSummary(patient.name, pFiles, patient.id).then(res => {
-          if (isMounted) setSummary(res);
-        }).catch(() => {});
+        // --- CACHING MAGIC FOR SMART SUMMARY ---
+        const summaryCacheKey = `halo_summary_${patient.id}`;
+        const cachedSummary = sessionStorage.getItem(summaryCacheKey);
 
-        const labFiles = pFiles.filter(f =>
-          f.name.toLowerCase().includes('lab') ||
-          f.name.toLowerCase().includes('blood') ||
-          f.name.toLowerCase().includes('result')
-        );
-
-        if (labFiles.length > 0) {
-          const labContext = labFiles.map(f => f.name).join(', ');
-          extractLabAlerts(`Patient files indicate lab results: ${labContext}`).then(res => {
-            if (isMounted) setAlerts(res);
+        if (cachedSummary) {
+          // 1. We found it in memory! Load it instantly.
+          if (isMounted) setSummary(JSON.parse(cachedSummary));
+        } else {
+          // 2. Not in memory. Ask Gemini to generate it, then save it!
+          generatePatientSummary(patient.name, pFiles, patient.id).then(res => {
+            if (isMounted) {
+              setSummary(res);
+              sessionStorage.setItem(summaryCacheKey, JSON.stringify(res));
+            }
           }).catch(() => {});
+        }
+
+        // --- CACHING MAGIC FOR LAB ALERTS ---
+        const alertCacheKey = `halo_alerts_${patient.id}`;
+        const cachedAlerts = sessionStorage.getItem(alertCacheKey);
+
+        if (cachedAlerts) {
+          if (isMounted) setAlerts(JSON.parse(cachedAlerts));
+        } else {
+          const labFiles = pFiles.filter(f =>
+            f.name.toLowerCase().includes('lab') ||
+            f.name.toLowerCase().includes('blood') ||
+            f.name.toLowerCase().includes('result')
+          );
+
+          if (labFiles.length > 0) {
+            const labContext = labFiles.map(f => f.name).join(', ');
+            extractLabAlerts(`Patient files indicate lab results: ${labContext}`).then(res => {
+              if (isMounted) {
+                setAlerts(res);
+                sessionStorage.setItem(alertCacheKey, JSON.stringify(res));
+              }
+            }).catch(() => {});
+          }
         }
       } catch (err) {
         if (isMounted) {

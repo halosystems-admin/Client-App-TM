@@ -16,6 +16,9 @@ import {
 const router = Router();
 router.use(requireAuth);
 
+const getUserId = (req: Request): string =>
+  req.session.userEmail ?? req.session.userId ?? 'unknown-user';
+
 // POST /summary — enhanced: reads actual file content (PDF, DOCX, TXT, Google Docs)
 router.post('/summary', async (req: Request, res: Response) => {
   try {
@@ -68,7 +71,13 @@ router.post('/summary', async (req: Request, res: Response) => {
       }
     }
 
-    const text = await generateText(summaryPrompt(patientName, fileContext));
+    const userId = getUserId(req);
+    const text = await generateText(
+      summaryPrompt(patientName, fileContext),
+      userId,
+      'Gemini-Patient-Summary',
+      true
+    );
     res.json(safeJsonParse<string[]>(text, ['Summary unavailable.']));
   } catch (err) {
     console.error('Summary error:', err);
@@ -86,7 +95,13 @@ router.post('/lab-alerts', async (req: Request, res: Response) => {
       return;
     }
 
-    const text = await generateText(labAlertsPrompt(content));
+    const userId = getUserId(req);
+    const text = await generateText(
+      labAlertsPrompt(content),
+      userId,
+      'Gemini-Lab-Alerts',
+      false
+    );
     res.json(safeJsonParse(text, []));
   } catch (err) {
     console.error('Lab alerts error:', err);
@@ -105,7 +120,15 @@ router.post('/analyze-image', async (req: Request, res: Response) => {
     }
 
     const cleanBase64 = base64Image.split(',')[1] || base64Image;
-    const text = await analyzeImage(imageAnalysisPrompt(), cleanBase64, 'image/jpeg');
+    const userId = getUserId(req);
+    const text = await analyzeImage(
+      imageAnalysisPrompt(),
+      cleanBase64,
+      'image/jpeg',
+      userId,
+      'Gemini-Image-Vision',
+      true
+    );
     const filename = text.trim() || 'processed_image.jpg';
 
     res.json({ filename });
@@ -135,6 +158,7 @@ router.post('/search', async (req: Request, res: Response) => {
     }
 
     const token = req.session.accessToken!;
+    const userId = getUserId(req);
 
     // Build rich context: file names + snippet of text file contents per patient
     const contextParts: string[] = [];
@@ -172,7 +196,12 @@ router.post('/search', async (req: Request, res: Response) => {
     }
 
     const context = contextParts.join('\n');
-    const text = await generateText(searchPrompt(query, context));
+    const text = await generateText(
+      searchPrompt(query, context),
+      userId,
+      'Gemini-Concept-Search',
+      true
+    );
     res.json(safeJsonParse<string[]>(text, []));
   } catch (err) {
     console.error('Search error:', err);
@@ -180,6 +209,7 @@ router.post('/search', async (req: Request, res: Response) => {
   }
 });
 
+// Shared chat context builder (used by /chat and /chat-stream)
 // Shared chat context builder (used by /chat and /chat-stream)
 async function buildChatContext(
   token: string,
@@ -207,12 +237,23 @@ async function buildChatContext(
     .join('\n');
   contextParts.push(`Patient files:\n${fileList}`);
 
-  for (const file of readableFiles) {
-    const textContent = await extractTextFromFile(token, file, 2000);
-    if (textContent.trim()) {
-      contextParts.push(`\n--- File: ${file.name} ---\n${textContent}`);
-    }
-  }
+  // THE FIX: Fetch all files in parallel simultaneously!
+  const fileContents = await Promise.all(
+    readableFiles.map(async (file) => {
+      try {
+        const textContent = await extractTextFromFile(token, file, 2000);
+        if (textContent.trim()) {
+          return `\n--- File: ${file.name} ---\n${textContent}`;
+        }
+      } catch (err) {
+        console.error(`Failed to extract ${file.name}`, err);
+      }
+      return '';
+    })
+  );
+
+  // Add all downloaded contents to our context
+  contextParts.push(...fileContents);
 
   const fullContext = contextParts.join('\n').substring(0, 15000);
   const conversationHistory = (history || [])
@@ -239,13 +280,19 @@ router.post('/chat-stream', async (req: Request, res: Response) => {
 
     const token = req.session.accessToken!;
     const prompt = await buildChatContext(token, patientId, question, history || []);
+    const userId = getUserId(req);
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders?.();
 
-    for await (const chunk of generateTextStream(prompt)) {
+    for await (const chunk of generateTextStream(
+      prompt,
+      userId,
+      'Gemini-Halo-Chat',
+      false
+    )) {
       const escaped = JSON.stringify(chunk);
       res.write(`data: ${escaped}\n\n`);
     }
@@ -279,7 +326,13 @@ router.post('/chat', async (req: Request, res: Response) => {
 
     const token = req.session.accessToken!;
     const prompt = await buildChatContext(token, patientId, question, history || []);
-    const reply = await generateText(prompt);
+    const userId = getUserId(req);
+    const reply = await generateText(
+      prompt,
+      userId,
+      'Gemini-Halo-Chat',
+      false
+    );
     res.json({ reply });
   } catch (err) {
     console.error('Chat error:', err);
@@ -302,13 +355,21 @@ router.post('/transcribe', async (req: Request, res: Response) => {
     }
 
     const cleanBase64 = audioBase64.split(',')[1] || audioBase64;
+    const userId = getUserId(req);
     const audioBuffer = Buffer.from(cleanBase64, 'base64');
     const audioMime = mimeType || 'audio/webm';
 
     // Fallback to Gemini if Deepgram is not available
     if (!isDeepgramAvailable()) {
       console.log('Deepgram key not set, falling back to Gemini for transcription');
-      const soapNote = await transcribeAudio(geminiTranscriptionPrompt(customTemplate), cleanBase64, audioMime);
+      const soapNote = await transcribeAudio(
+        geminiTranscriptionPrompt(customTemplate),
+        cleanBase64,
+        audioMime,
+        userId,
+        'Gemini-Audio-SOAP-Fallback',
+        false
+      );
       res.json({ soapNote, rawTranscript: '' });
       return;
     }
@@ -320,7 +381,12 @@ router.post('/transcribe', async (req: Request, res: Response) => {
       return;
     }
 
-    const soapNote = await generateText(soapNotePrompt(transcript, customTemplate));
+    const soapNote = await generateText(
+      soapNotePrompt(transcript, customTemplate),
+      userId,
+      'Gemini-SOAP-Gen',
+      false
+    );
     res.json({ soapNote, rawTranscript: transcript });
   } catch (err) {
     console.error('Transcribe error:', err);

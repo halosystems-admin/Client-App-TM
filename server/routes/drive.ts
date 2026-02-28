@@ -61,6 +61,15 @@ router.get('/patients', async (req: Request, res: Response) => {
     const data = await driveRequest(token, url);
     const patients = (data.files || []).map(parsePatientFolder);
 
+    console.log(
+      'Fetch patients:',
+      req.session.userEmail || 'unknown user',
+      'rootId',
+      rootId,
+      'count',
+      patients.length
+    );
+
     // Auto-heal: update appProperties if folder name was changed in Drive
     for (const f of data.files || []) {
       if (!f.name.includes('__')) continue;
