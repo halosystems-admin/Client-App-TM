@@ -3,3 +3,4 @@ dist/
 .env
 client/node_modules/
 client/dist/
+sessions/

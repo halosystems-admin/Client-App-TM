@@ -10,6 +10,7 @@ import type {
 } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
+const NOTES_API_BASE = import.meta.env.VITE_NOTES_API_URL || '';
 
 // --- Structured Error ---
 export class ApiError extends Error {
