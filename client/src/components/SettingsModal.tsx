@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { UserSettings, TemplateItem } from '../../../shared/types';
+import type { UserSettings } from '../../../shared/types';
 import {
   X, Pencil, Save, User, Clock, Briefcase, MapPin, GraduationCap,
   FileText, Upload, Check, AlertCircle, RefreshCw, Loader2, 
   Settings as SettingsIcon, BarChart3, Plus, Droplets, Activity, Brain
 } from 'lucide-react';
-import { runSchedulerNow, getTemplates } from '../services/api';
-
-const LAST_TEMPLATE_KEY = 'halo_lastTemplateId';
+import { runSchedulerNow } from '../services/api';
+import { CustomTemplates } from './settings/CustomTemplates';
+import { TemplatePlayground } from './settings/TemplatePlayground';
 
 const DEFAULT_SETTINGS: UserSettings = {
   firstName: '', lastName: '', profession: '', department: '',
@@ -117,12 +117,6 @@ export const SettingsModal: React.FC<Props> = ({
   const showEmergency = dept.includes('emergency') || dept.includes('general') || dept.includes('er');
   const showSuggested = !showNephro && !showSurgery && !showEmergency;
 
-  const [practiceTemplates, setPracticeTemplates] = useState<TemplateItem[]>([]);
-  const [practiceTemplatesLoading, setPracticeTemplatesLoading] = useState(false);
-  const [selectedPracticeTemplateId, setSelectedPracticeTemplateId] = useState<string | null>(() =>
-    typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_TEMPLATE_KEY) : null
-  );
-
   // --- CORE LOGIC FUNCTIONS ---
   const handleRunScheduler = async () => {
     setSchedulerMessage(null);
@@ -175,29 +169,6 @@ export const SettingsModal: React.FC<Props> = ({
       setTemplateTab((settings.noteTemplate === 'custom' ? 'custom' : 'soap'));
     }
   }, [settings]);
-
-  // FIXED GATEKEEPER: Will always attempt to fetch Practice Templates 
-  useEffect(() => {
-    if (!isOpen) return;
-    const safeUserId = userId || 'default_user';
-    
-    setPracticeTemplatesLoading(true);
-    getTemplates(safeUserId)
-      .then((list) => {
-        console.log("TEMPLATES RECEIVED FROM API:", list); // Check your browser console!
-        setPracticeTemplates(list);
-        if (list.length > 0) {
-          const last = localStorage.getItem(LAST_TEMPLATE_KEY);
-          const found = list.find(t => t.id === last) || list[0];
-          setSelectedPracticeTemplateId(found.id);
-        }
-      })
-      .catch((err) => {
-        console.error("TEMPLATE FETCH FAILED:", err);
-        setPracticeTemplates([]);
-      })
-      .finally(() => setPracticeTemplatesLoading(false));
-  }, [isOpen, userId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -364,40 +335,36 @@ export const SettingsModal: React.FC<Props> = ({
                     </div>
                   )}
                   {templateTab === 'custom' && (
-                    <div className="h-full flex flex-col">
-                       {form.customTemplateContent ? (
-                         <textarea 
-                           className="flex-1 w-full p-4 rounded-lg border border-slate-200 font-mono text-xs focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none resize-none bg-slate-50/50"
-                           value={form.customTemplateContent}
-                           onChange={(e) => setForm({...form, customTemplateContent: e.target.value})}
-                         />
-                       ) : (
-                        <div onClick={() => fileInputRef.current?.click()} className="flex-1 border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/30 transition-all">
-                          <Upload className="text-slate-400 mb-2" size={20} />
-                          <p className="text-xs font-semibold text-slate-500">Click to upload .txt or .md template</p>
-                        </div>
-                       )}
-                       <input ref={fileInputRef} type="file" className="hidden" onChange={handleTemplateUpload} />
+                    <div className="h-full flex flex-col gap-5">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Templates from API (demo)</p>
+                        <CustomTemplates />
+                      </div>
+                      <div className="border-t border-slate-200 pt-4">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Your custom template</p>
+                        {form.customTemplateContent ? (
+                          <textarea 
+                            className="flex-1 w-full min-h-[120px] p-4 rounded-lg border border-slate-200 font-mono text-xs focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none resize-none bg-slate-50/50"
+                            value={form.customTemplateContent}
+                            onChange={(e) => setForm({...form, customTemplateContent: e.target.value})}
+                          />
+                        ) : (
+                          <div onClick={() => fileInputRef.current?.click()} className="min-h-[120px] border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/30 transition-all">
+                            <Upload className="text-slate-400 mb-2" size={20} />
+                            <p className="text-xs font-semibold text-slate-500">Click to upload .txt or .md template</p>
+                          </div>
+                        )}
+                        <input ref={fileInputRef} type="file" className="hidden" onChange={handleTemplateUpload} />
+                      </div>
                     </div>
                   )}
                   {templateTab === 'practice' && (
-                    <div className="space-y-2">
-                      {practiceTemplatesLoading ? (
-                        <div className="flex items-center gap-2 text-sm text-slate-500 p-4">
-                          <Loader2 size={16} className="animate-spin text-teal-500" /> Fetching latest practice templates...
-                        </div>
-                      ) : practiceTemplates.length > 0 ? (
-                        practiceTemplates.map(t => (
-                          <button key={t.id} onClick={() => setSelectedPracticeTemplateId(t.id)} className={`w-full text-left px-4 py-3 rounded-lg border transition-all text-sm ${selectedPracticeTemplateId === t.id ? 'bg-teal-50/50 border-teal-200 text-teal-800 font-medium' : 'bg-white border-slate-100 hover:border-slate-300 text-slate-600'}`}>
-                            {t.name || t.id}
-                          </button>
-                        ))
-                      ) : (
-                        <div className="p-4 text-center">
-                          <p className="text-sm text-slate-500">No official templates found from your practice network.</p>
-                          <p className="text-xs text-slate-400 mt-1">Ensure your API connection is live.</p>
-                        </div>
-                      )}
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-800">Template Playground</h4>
+                        <p className="text-xs text-slate-500 mt-0.5">Select a template, choose or type clinical input, and generate a test note.</p>
+                      </div>
+                      <TemplatePlayground userId={userId || 'demo'} />
                     </div>
                   )}
                 </div>
