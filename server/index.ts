@@ -2,9 +2,10 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import session from 'express-session';
 import rateLimit from 'express-rate-limit';
-import path from 'path';
 import helmet from 'helmet';
-import FileStoreFactory from 'session-file-store';
+import pg from 'pg';
+import connectPgSimple from 'connect-pg-simple';
+import path from 'path';
 import { config } from './config';
 import authRoutes from './routes/auth';
 import driveRoutes from './routes/drive';
@@ -17,15 +18,22 @@ import { startScheduler } from './jobs/scheduler';
 const app = express();
 
 // --- CRITICAL HEROKU FIX ---
-// Tells Express to trust the Heroku proxy so secure cookies are sent properly
 app.set('trust proxy', 1);
 
-const FileStore = FileStoreFactory(session);
+// --- NEW: Database Session Setup ---
+const pgPool = new pg.Pool({
+  // Heroku automatically provides this variable when you attach the Postgres add-on
+  connectionString: process.env.DATABASE_URL,
+  // Heroku requires SSL for database connections in production
+  ssl: config.isProduction ? { rejectUnauthorized: false } : false 
+});
+
+const PostgresqlStore = connectPgSimple(session);
 
 // --- Global Rate Limiter ---
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300, // 300 requests per window
+  windowMs: 15 * 60 * 1000, 
+  max: 300, 
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please try again later.' },
@@ -33,8 +41,8 @@ const globalLimiter = rateLimit({
 
 // --- AI Route Rate Limiter (stricter) ---
 const aiLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 20, // 20 AI requests per minute
+  windowMs: 60 * 1000, 
+  max: 20, 
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'AI rate limit reached. Please wait before trying again.' },
@@ -58,18 +66,17 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '50mb' }));
 
-const sessionStore = new FileStore({
-  path: path.join(__dirname, '../sessions'),
-  retries: 1,
-});
-
+// --- NEW: Using Postgres for Sessions ---
 app.use(session({
-  store: sessionStore,
-  secret: config.sessionSecret,
+  store: new PostgresqlStore({
+    pool: pgPool,
+    createTableIfMissing: true, // Automatically creates the 'session' SQL table
+  }),
+  secret: config.sessionSecret || 'fallback-secret-key',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: config.isProduction, // Now this will work on Heroku!
+    secure: config.isProduction, 
     httpOnly: true,
     sameSite: config.isProduction ? 'none' : 'lax',
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
