@@ -4,9 +4,10 @@ import { config } from '../config';
 
 const router = Router();
 
-const getRedirectUri = (): string => {
-  if (config.isProduction) {
-    return `${config.productionUrl}/api/auth/callback`;
+// Updated to dynamically read the host (e.g., halo-main-dev...herokuapp.com)
+const getRedirectUri = (req: Request): string => {
+  if (config.isProduction || process.env.NODE_ENV === 'production') {
+    return `https://${req.get('host')}/api/auth/callback`;
   }
   return 'http://localhost:3000/api/auth/callback';
 };
@@ -25,7 +26,8 @@ router.get('/login-url', (req: Request, res: Response) => {
     'profile',
   ].join(' ');
 
-  const redirectUri = getRedirectUri();
+  // Pass the req object into the function here
+  const redirectUri = getRedirectUri(req);
 
   const state = crypto.randomBytes(16).toString('hex');
   (req.session as any).oauthState = state;
@@ -70,7 +72,8 @@ router.get('/callback', async (req: Request, res: Response) => {
   }
 
   try {
-    const redirectUri = getRedirectUri();
+    // Pass the req object into the function here too
+    const redirectUri = getRedirectUri(req);
 
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -116,7 +119,8 @@ router.get('/callback', async (req: Request, res: Response) => {
 
     console.log(`User signed in: ${user.email}`);
 
-    res.redirect(config.clientUrl);
+    // Fallback to '/' just in case config.clientUrl is empty in Heroku
+    res.redirect(config.clientUrl || '/');
   } catch (err) {
     console.error('Auth callback error:', err);
     res.status(500).json({ error: 'Authentication failed. Please try again.' });
