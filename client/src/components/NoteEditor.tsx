@@ -1,5 +1,5 @@
 import React from 'react';
-import { Save, FileDown } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { AppStatus } from '../../../shared/types';
 import { renderInlineMarkdown } from '../utils/formatting';
 
@@ -10,9 +10,6 @@ interface NoteEditorProps {
   onEditModeChange: (mode: 'write' | 'preview') => void;
   status: AppStatus;
   onSave: () => void;
-  onGenerateFromTemplate?: () => Promise<void>;
-  generateLoading?: boolean;
-  showGenerateButton?: boolean;
 }
 
 function renderMarkdown(text: string) {
@@ -40,29 +37,12 @@ function renderMarkdown(text: string) {
 
 export const NoteEditor: React.FC<NoteEditorProps> = ({
   noteContent, onNoteContentChange, editMode, onEditModeChange, status, onSave,
-  onGenerateFromTemplate, generateLoading, showGenerateButton,
 }) => {
   return (
     <div className="h-[600px] flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center flex-wrap gap-2">
         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Clinical Note Editor</span>
         <div className="flex items-center gap-2">
-          {showGenerateButton && onGenerateFromTemplate && (
-            <button
-              type="button"
-              onClick={onGenerateFromTemplate}
-              disabled={generateLoading || status === AppStatus.SAVING || status === AppStatus.FILING}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200 transition disabled:opacity-50"
-            >
-              {generateLoading ? (
-                <>Generating…</>
-              ) : (
-                <>
-                  <FileDown size={12} /> Generate from template
-                </>
-              )}
-            </button>
-          )}
           <div className="flex bg-slate-200 p-0.5 rounded-lg">
           <button
             onClick={() => onEditModeChange('write')}

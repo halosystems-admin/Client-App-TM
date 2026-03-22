@@ -1,11 +1,21 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { Patient, DriveFile, LabAlert, BreadcrumbItem, ChatMessage } from '../../../shared/types';
+import type { Patient, DriveFile, LabAlert, BreadcrumbItem, ChatMessage, TemplateItem } from '../../../shared/types';
 import { AppStatus, FOLDER_MIME_TYPE } from '../../../shared/types';
 
 import {
-  fetchFiles, fetchFolderContents, uploadFile, saveNote, updatePatient,
-  updateFileMetadata, generatePatientSummary, analyzeAndRenameImage,
-  extractLabAlerts, deleteFile, createFolder, askHaloStream, generateNote,
+  fetchFiles,
+  fetchFolderContents,
+  uploadFile,
+  saveNote,
+  updatePatient,
+  updateFileMetadata,
+  generatePatientSummary,
+  analyzeAndRenameImage,
+  extractLabAlerts,
+  deleteFile,
+  createFolder,
+  askHaloStream,
+  generateNote,
 } from '../services/api';
 import {
   Upload, Calendar, Clock, CheckCircle2, ChevronLeft, Loader2,
@@ -15,11 +25,14 @@ import {
 import { SmartSummary } from '../features/smart-summary/SmartSummary';
 import { LabAlerts } from '../features/lab-alerts/LabAlerts';
 import { UniversalScribe } from '../features/scribe/UniversalScribe';
+import { ScoringModule } from '../features/scoring/ScoringModule';
 import { FileViewer } from '../components/FileViewer';
 import { FileBrowser } from '../components/FileBrowser';
 import { NoteEditor } from '../components/NoteEditor';
 import { PatientChat } from '../components/PatientChat';
 import { getErrorMessage } from '../utils/formatting';
+
+const NOTES_API_BASE = import.meta.env.VITE_NOTES_API_URL ?? '';
 
 const LAST_TEMPLATE_KEY = 'halo_lastTemplateId';
 
@@ -39,7 +52,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   const [alerts, setAlerts] = useState<LabAlert[]>([]);
   const [noteContent, setNoteContent] = useState("");
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
-  const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'chat'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'chat' | 'scoring'>('overview');
   const [editMode, setEditMode] = useState<'write' | 'preview'>('write');
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -86,6 +99,39 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   const [generateNoteLoading, setGenerateNoteLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Template / editor workflow state
+  const [activeTemplate, setActiveTemplate] = useState<TemplateItem | null>(null);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [templateModalMode, setTemplateModalMode] = useState<'record' | 'save'>('save');
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const pendingRecordStartRef = useRef<(() => void) | null>(null);
+
+  const normalizeTemplates = (raw: unknown): TemplateItem[] => {
+    if (!raw) return [];
+    // Handle array of templates
+    if (Array.isArray(raw)) {
+      return raw as TemplateItem[];
+    }
+    // Handle Firebase-style object map { id: { ...template } }
+    if (typeof raw === 'object' && raw !== null) {
+      const obj = raw as Record<string, unknown>;
+      return Object.entries(obj).map(([id, value]) => {
+        const v = (value as Record<string, unknown>) || {};
+        return {
+          id,
+          name: (v.name as string) || (v.label as string) || id,
+          label: (v.label as string) || (v.name as string) || id,
+          type: v.type as string | undefined,
+          ...v,
+        } as TemplateItem;
+      });
+    }
+    return [];
+  };
 
   const isFolder = (file: DriveFile): boolean => file.mimeType === FOLDER_MIME_TYPE;
 
@@ -333,61 +379,209 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   };
 
   const handleSaveNote = async () => {
+    // Enforce template selection before saving
+    if (!activeTemplate) {
+      openTemplateModal('save');
+      return; // STRICTLY STOP EXECUTION HERE
+    }
+
     if (!noteContent.trim()) return;
+
     setStatus(AppStatus.FILING);
     try {
-      await saveNote(patient.id, noteContent);
+      // Ensure Patient Notes folder exists
+      let patientNotesFolder = files.find(
+        (f) => f.mimeType === FOLDER_MIME_TYPE && f.name === 'Patient Notes'
+      );
+      if (!patientNotesFolder) {
+        patientNotesFolder = await createFolder(patient.id, 'Patient Notes');
+      }
+
+      const isClerk =
+        (activeTemplate.type && String(activeTemplate.type).toLowerCase() === 'clerk') ||
+        (activeTemplate.name &&
+          activeTemplate.name.toLowerCase().includes('clerk')) ||
+        (activeTemplate.name &&
+          activeTemplate.name.toLowerCase() === 'clinical notes');
+
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+
+      let folderPath = 'Patient Notes';
+      let fileName = '';
+
+      if (isClerk) {
+        fileName = `[Clinical Notes] ${dateStr}`;
+      } else {
+        const templateName =
+          activeTemplate.name || activeTemplate.label || activeTemplate.id;
+        fileName = `[${templateName}] - ${dateStr}`;
+
+        // Ensure categorical subfolder exists under Patient Notes
+        const baseName = templateName.trim();
+        let categoryFolderName = '';
+        if (/soap/i.test(baseName)) {
+          categoryFolderName = 'SOAP Notes';
+        } else if (/operat/i.test(baseName)) {
+          categoryFolderName = 'Operative Notes';
+        } else {
+          categoryFolderName = `${baseName} Notes`;
+        }
+
+        const existingChildren = await fetchFolderContents(patientNotesFolder.id);
+        let categoryFolder = existingChildren.find(
+          (f) => f.mimeType === FOLDER_MIME_TYPE && f.name === categoryFolderName
+        );
+        if (!categoryFolder) {
+          categoryFolder = await createFolder(patientNotesFolder.id, categoryFolderName);
+        }
+
+        folderPath = `Patient Notes/${categoryFolderName}`;
+      }
+
+      await saveNote(patient.id, noteContent, {
+        fileName,
+        folderPath,
+      });
+
       setNoteContent("");
       await loadFolderContents(currentFolderId);
       onDataChange();
-      onToast('Note filed to Patient Notes folder.', 'success');
+      onToast('Note filed to Google Drive.', 'success');
     } catch (err) {
       onToast(getErrorMessage(err), 'error');
     }
     setStatus(AppStatus.IDLE);
   };
 
-  const handleScribeResult = (text: string) => {
+  const handleScribeResult = async (text: string) => {
     setActiveTab('notes');
-    setNoteContent(prev => prev + (prev ? "\n\n" : "") + text);
-    setEditMode('write');
-  };
 
-  const handleGenerateFromTemplate = async () => {
-    if (!userId) {
-      onToast('Sign in required to generate from template.', 'error');
+    const rawText = text;
+
+    if (!activeTemplate) {
+      // No template selected (should not happen when using forced-template flow) — treat as clerk note
+      setNoteContent(prev => prev + (prev ? "\n\n" : "") + rawText);
+      setEditMode('write');
       return;
     }
-    const templateId = typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_TEMPLATE_KEY) : null;
-    if (!templateId) {
-      onToast('Select a template in Settings first.', 'error');
-      return;
-    }
-    setGenerateNoteLoading(true);
+
+    const isSoapBuiltin =
+      activeTemplate.id === 'soap_builtin' ||
+      (activeTemplate.type && String(activeTemplate.type).toLowerCase() === 'soap');
+
     try {
-      const result = await generateNote({
-        user_id: userId,
-        template_id: templateId,
-        text: noteContent,
-        return_type: 'note',
-      });
-      if (result.content != null) {
-        setNoteContent(result.content);
-        setEditMode('write');
-        onToast('Note generated from template. Edit and save when ready.', 'success');
-      } else if (result.blob) {
-        const url = URL.createObjectURL(result.blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'note.docx';
-        a.click();
-        URL.revokeObjectURL(url);
-        onToast('DOCX downloaded.', 'success');
+      let finalText = rawText;
+
+      if (!isSoapBuiltin) {
+        if (!userId) {
+          onToast('Sign in required to apply custom template.', 'error');
+        } else {
+          setGenerateNoteLoading(true);
+          const result = await generateNote({
+            user_id: userId,
+            template_id: activeTemplate.id,
+            text: rawText,
+            return_type: 'note',
+          });
+          if (result.content) {
+            finalText = result.content;
+          }
+        }
       }
+
+      setNoteContent(finalText);
+      setEditMode('write');
+      onToast('Draft generated. Review and save when ready.', 'success');
     } catch (err) {
       onToast(getErrorMessage(err), 'error');
+      setNoteContent(prev => prev + (prev ? "\n\n" : "") + rawText);
+      setEditMode('write');
     } finally {
       setGenerateNoteLoading(false);
+    }
+  };
+
+  const openTemplateModal = (mode: 'record' | 'save', pendingStart?: () => void) => {
+    setTemplateModalMode(mode);
+    setTemplateModalOpen(true);
+    if (pendingStart) pendingRecordStartRef.current = pendingStart;
+
+    // Always ensure at least the built-in SOAP template is visible
+    if (templates.length === 0) {
+      const soapTemplate: TemplateItem = {
+        id: 'soap_builtin',
+        name: 'SOAP Note',
+        label: 'SOAP Note',
+        type: 'soap',
+      };
+      setTemplates([soapTemplate]);
+      if (!selectedTemplateId) {
+        setSelectedTemplateId('soap_builtin');
+      }
+      setTemplatesLoading(true);
+      setTemplatesError(null);
+
+      const apiUrl = (NOTES_API_BASE || '').replace(/\/$/, '');
+      if (!apiUrl) {
+        setTemplatesLoading(false);
+        return;
+      }
+
+      const requestUrl = `${apiUrl}/get_templates`;
+      fetch(requestUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        // TEMP: backend currently uses demo user for templates.
+        // Match Settings > CustomTemplates so lists stay in sync.
+        body: JSON.stringify({ user_id: 'demo' }),
+      })
+        .then(async (res) => {
+          const text = await res.text();
+          if (!res.ok) {
+            throw new Error(text || `Status ${res.status}`);
+          }
+          if (!text || text === 'null' || text.trim() === '') {
+            return [];
+          }
+          const data = JSON.parse(text) as unknown;
+          return normalizeTemplates(data);
+        })
+        .then((list) => {
+          if (list.length === 0) {
+            setTemplates([soapTemplate]);
+            return;
+          }
+          setTemplates([soapTemplate, ...list]);
+        })
+        .catch((err) => {
+          setTemplatesError(getErrorMessage(err));
+        })
+        .finally(() => {
+          setTemplatesLoading(false);
+        });
+    }
+  };
+
+  const handleConfirmTemplate = () => {
+    const chosenId = selectedTemplateId;
+    if (!chosenId) return;
+
+    const tmpl = templates.find((t) => t.id === chosenId);
+    if (!tmpl) return;
+
+    setActiveTemplate(tmpl);
+    setTemplateModalOpen(false);
+
+    if (templateModalMode === 'record' && pendingRecordStartRef.current) {
+      const startFn = pendingRecordStartRef.current;
+      pendingRecordStartRef.current = null;
+      startFn();
     }
   };
 
@@ -609,6 +803,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             <button onClick={() => setActiveTab('chat')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'chat' ? 'border-teal-600 text-teal-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
               <MessageCircle size={14} /> Ask HALO?
             </button>
+            <button onClick={() => setActiveTab('scoring')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap ${activeTab === 'scoring' ? 'border-teal-600 text-teal-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Scoring</button>
           </div>
 
           {activeTab === 'overview' ? (
@@ -632,11 +827,8 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
               onEditModeChange={setEditMode}
               status={status}
               onSave={handleSaveNote}
-              onGenerateFromTemplate={handleGenerateFromTemplate}
-              generateLoading={generateNoteLoading}
-              showGenerateButton={!!notesApiAvailable}
             />
-          ) : (
+          ) : activeTab === 'chat' ? (
             <PatientChat
               patientName={patient.name}
               chatMessages={chatMessages}
@@ -646,11 +838,24 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
               chatLongWait={chatLongWait}
               onSendChat={handleSendChat}
             />
+          ) : (
+            <ScoringModule onToast={onToast} />
           )}
         </div>
       </div>
 
-      <UniversalScribe onTranscriptionComplete={handleScribeResult} onError={(msg: string) => onToast(msg, 'error')} customTemplate={customTemplate} />
+      <UniversalScribe
+        onTranscriptionComplete={handleScribeResult}
+        onError={(msg: string) => onToast(msg, 'error')}
+        customTemplate={customTemplate}
+        onRequestStartRecording={(start) => {
+          if (activeTemplate) {
+            start();
+          } else {
+            openTemplateModal('record', start);
+          }
+        }}
+      />
 
       {/* EDIT PATIENT MODAL */}
       {editingPatient && (
@@ -845,6 +1050,95 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                   <FolderPlus size={16} /> Create
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TEMPLATE SELECTION MODAL */}
+      {templateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 m-4">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">
+                  Select Note Template
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Choose how HALO should structure this note.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setTemplateModalOpen(false);
+                  pendingRecordStartRef.current = null;
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+              {templatesLoading && (
+                <div className="flex items-center gap-2 text-xs text-slate-500 px-1 py-2">
+                  <Loader2 size={14} className="animate-spin text-teal-500" />
+                  Fetching templates…
+                </div>
+              )}
+
+              {templatesError && !templatesLoading && (
+                <p className="text-xs text-rose-600 px-1">{templatesError}</p>
+              )}
+
+              {!templatesLoading &&
+                !templatesError &&
+                templates.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setSelectedTemplateId(t.id)}
+                    className={`w-full flex flex-col items-start px-3 py-2 rounded-lg border text-sm transition-all ${
+                      selectedTemplateId === t.id
+                        ? 'bg-slate-900 border-slate-900 text-white'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <span className="font-medium">
+                      {t.name || t.label || t.id}
+                    </span>
+                    {Boolean(t.description) && (
+                      <span className="text-[11px] text-slate-400 mt-0.5">
+                        {String(t.description)}
+                      </span>
+                    )}
+                  </button>
+                ))}
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => {
+                  setTemplateModalOpen(false);
+                  pendingRecordStartRef.current = null;
+                }}
+                className="flex-1 px-4 py-2 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmTemplate}
+                disabled={!selectedTemplateId}
+                className={`flex-1 px-4 py-2 rounded-xl font-bold text-white shadow-lg shadow-teal-600/20 transition flex items-center justify-center gap-2 ${
+                  templateModalMode === 'record'
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : 'bg-teal-600 hover:bg-teal-700'
+                } disabled:opacity-50`}
+              >
+                {templateModalMode === 'record'
+                  ? 'Continue Recording'
+                  : 'Continue'}
+              </button>
             </div>
           </div>
         </div>

@@ -8,6 +8,9 @@ import {
 import { runSchedulerNow } from '../services/api';
 import { CustomTemplates } from './settings/CustomTemplates';
 import { TemplatePlayground } from './settings/TemplatePlayground';
+import { scoringConfig } from '../features/scoring/scoringConfig';
+import type { ScoringSystem } from '../features/scoring/scoringTypes';
+import { CalculatorView } from '../features/scoring/CalculatorView';
 
 const DEFAULT_SETTINGS: UserSettings = {
   firstName: '', lastName: '', profession: '', department: '',
@@ -43,6 +46,28 @@ const InputField = ({ label, value, onChange, placeholder, type = "text", inputM
     />
   </div>
 );
+
+function getCategoryTheme(category: string): { icon: React.ElementType; bg: string; text: string } {
+  const c = category.toLowerCase();
+  if (c.includes('cardio') || c.includes('pulmon')) {
+    // Cardiology / Pulmonology – pulse/heart vibe
+    return { icon: Activity, bg: 'bg-rose-50', text: 'text-rose-600' };
+  }
+  if (c.includes('neuro') || c.includes('psych')) {
+    // Neurology / Psychiatry
+    return { icon: Brain, bg: 'bg-purple-50', text: 'text-purple-600' };
+  }
+  if (c.includes('hepato') || c.includes('gastro') || c.includes('liver')) {
+    // Hepatology / Gastroenterology
+    return { icon: Briefcase, bg: 'bg-amber-50', text: 'text-amber-600' };
+  }
+  if (c.includes('infect') || c.includes('critical') || c.includes('icu')) {
+    // Infectious Disease / Critical Care
+    return { icon: AlertCircle, bg: 'bg-orange-50', text: 'text-orange-600' };
+  }
+  // Default neutral medical tool
+  return { icon: Activity, bg: 'bg-slate-100', text: 'text-slate-600' };
+}
 
 export const SettingsModal: React.FC<Props> = ({
   isOpen, onClose, settings, onSave, userEmail, userId, notesApiAvailable, loginTime,
@@ -80,6 +105,9 @@ export const SettingsModal: React.FC<Props> = ({
   const [gcsVerbal, setGcsVerbal] = useState<number>(5);
   const [gcsMotor, setGcsMotor] = useState<number>(6);
 
+  // --- GLOBAL SCORING STATE ---
+  const [activeScoringId, setActiveScoringId] = useState<string | null>(null);
+
   // --- CALCULATIONS ---
   const calculateBMI = () => {
     const w = parseFloat(bmiWeight);
@@ -109,6 +137,9 @@ export const SettingsModal: React.FC<Props> = ({
   })();
 
   const gcsResult = gcsEye + gcsVerbal + gcsMotor;
+
+  const activeScoringSystem: ScoringSystem | null =
+    activeScoringId ? (scoringConfig.systems.find((s) => s.id === activeScoringId) ?? null) : null;
 
   // --- CONDITIONAL RENDERING LOGIC ---
   const dept = (form.department || '').toLowerCase();
@@ -208,7 +239,7 @@ export const SettingsModal: React.FC<Props> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 font-sans">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[600px] flex overflow-hidden animate-in fade-in zoom-in-95 border border-slate-200/60">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[600px] flex overflow-hidden animate-in fade-in zoom-in-95 border border-slate-200/60">
         
         {/* SIDEBAR NAV */}
         <div className="w-56 bg-slate-50/50 border-r border-slate-200/60 p-5 flex flex-col">
@@ -297,6 +328,14 @@ export const SettingsModal: React.FC<Props> = ({
                             <span className="text-xs font-medium">{form.city}{form.city && form.postalCode ? ', ' : ''}{form.postalCode}</span>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {userId && (
+                      <div className="mt-4 pt-3 border-t border-dashed border-slate-200 flex justify-end">
+                        <span className="text-[10px] font-mono text-slate-400">
+                          Notes user ID: {userId}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -408,49 +447,107 @@ export const SettingsModal: React.FC<Props> = ({
                   <p className="text-slate-500 text-xs mt-1">Dynamically configured for <span className="font-medium text-slate-700">{form.department || 'your profile'}</span>.</p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pb-6">
-                  
-                  {/* BMI CALCULATOR - FIXED INPUT TYPES */}
-                  <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm hover:border-teal-200 hover:shadow-md transition-all h-fit group">
-                    <div className="flex items-center gap-3 mb-5">
-                      <div className="w-8 h-8 bg-teal-50 text-teal-600 rounded-lg flex items-center justify-center group-hover:bg-teal-100 transition-colors">
-                        <BarChart3 size={16} />
-                      </div>
-                      <h4 className="font-semibold text-sm text-slate-800">Body Mass Index</h4>
+                {/* Standalone BMI calculator */}
+                <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm hover:border-teal-200 hover:shadow-md transition-all h-fit group mb-6">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-8 h-8 bg-teal-50 text-teal-600 rounded-lg flex items-center justify-center group-hover:bg-teal-100 transition-colors">
+                      <BarChart3 size={16} />
                     </div>
-
-                    <div className="space-y-3">
-                      <div className="flex gap-3">
-                        <InputField label="Weight (kg)" type="text" inputMode="decimal" value={bmiWeight} onChange={(e:any) => setBmiWeight(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 70" />
-                        <InputField label="Height (cm)" type="text" inputMode="decimal" value={bmiHeight} onChange={(e:any) => setBmiHeight(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 175" />
-                      </div>
-
-                      {bmiResult && (
-                        <div className="pt-4 mt-4 border-t border-slate-100 animate-in fade-in slide-in-from-top-1">
-                          <div className="flex justify-between items-end">
-                            <div>
-                              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Result</p>
-                              <p className="text-2xl font-bold text-slate-800 leading-none">{bmiResult}</p>
-                            </div>
-                            <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
-                              parseFloat(bmiResult) < 18.5 ? 'bg-blue-50 text-blue-600' : parseFloat(bmiResult) < 25 ? 'bg-teal-50 text-teal-700' : parseFloat(bmiResult) < 30 ? 'bg-orange-50 text-orange-700' : 'bg-rose-50 text-rose-700'
-                            }`}>
-                              {parseFloat(bmiResult) < 18.5 ? 'Underweight' : parseFloat(bmiResult) < 25 ? 'Healthy' : parseFloat(bmiResult) < 30 ? 'Overweight' : 'Obese'}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    <h4 className="font-semibold text-sm text-slate-800">Body Mass Index</h4>
                   </div>
 
-                  {/* NEPHROLOGY: eGFR - FIXED INPUT TYPES */}
-                  {showNephro && (
-                    <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm hover:border-blue-200 hover:shadow-md transition-all h-fit animate-in fade-in zoom-in-95 group">
-                      <div className="flex items-center gap-3 mb-5">
-                        <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center group-hover:bg-blue-100 transition-colors"><Droplets size={16} /></div>
-                        <h4 className="font-semibold text-sm text-slate-800">eGFR (MDRD)</h4>
+                  <div className="space-y-3">
+                    <div className="flex gap-3">
+                      <InputField label="Weight (kg)" type="text" inputMode="decimal" value={bmiWeight} onChange={(e:any) => setBmiWeight(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 70" />
+                      <InputField label="Height (cm)" type="text" inputMode="decimal" value={bmiHeight} onChange={(e:any) => setBmiHeight(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 175" />
+                    </div>
+
+                    {bmiResult && (
+                      <div className="pt-4 mt-4 border-t border-slate-100 animate-in fade-in slide-in-from-top-1">
+                        <div className="flex justify-between items-end">
+                          <div>
+                            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Result</p>
+                            <p className="text-2xl font-bold text-slate-800 leading-none">{bmiResult}</p>
+                          </div>
+                          <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                            parseFloat(bmiResult) < 18.5 ? 'bg-blue-50 text-blue-600' : parseFloat(bmiResult) < 25 ? 'bg-teal-50 text-teal-700' : parseFloat(bmiResult) < 30 ? 'bg-orange-50 text-orange-700' : 'bg-rose-50 text-rose-700'
+                          }`}>
+                            {parseFloat(bmiResult) < 18.5 ? 'Underweight' : parseFloat(bmiResult) < 25 ? 'Healthy' : parseFloat(bmiResult) < 30 ? 'Overweight' : 'Obese'}
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-3">
+                    )}
+                  </div>
+                </div>
+
+                {/* Global scoring calculators */}
+                <div className="bg-slate-50/60 border border-slate-200 rounded-2xl p-4 mb-5">
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-3">
+                    Global Clinical Scoring Systems
+                  </p>
+                  <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1 custom-scrollbar">
+                    {Object.entries(
+                      scoringConfig.systems.reduce<Record<string, ScoringSystem[]>>((acc, system) => {
+                        acc[system.category] = acc[system.category] || [];
+                        acc[system.category].push(system);
+                        return acc;
+                      }, {})
+                    )
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([category, systems]) => (
+                        <details key={category} className="bg-white border border-slate-200 rounded-xl shadow-sm">
+                          <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer">
+                            <span className="text-xs font-semibold text-slate-800">
+                              {category}
+                            </span>
+                          </summary>
+                          <div className="px-3 pb-2 pt-1 space-y-1.5">
+                            {systems
+                              .slice()
+                              .sort((a, b) => a.title.localeCompare(b.title))
+                              .map((system) => {
+                                const theme = getCategoryTheme(system.category);
+                                const Icon = theme.icon;
+                                return (
+                                  <button
+                                    key={system.id}
+                                    type="button"
+                                    onClick={() => setActiveScoringId(system.id)}
+                                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 border border-transparent hover:border-slate-200 transition-colors"
+                                  >
+                                    <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${theme.bg} ${theme.text}`}>
+                                      <Icon size={13} />
+                                    </div>
+                                    <span className="truncate">
+                                      <span className="font-semibold">{system.category}</span>
+                                      <span className="mx-1.5 text-slate-400">·</span>
+                                      <span>{system.title}</span>
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                          </div>
+                        </details>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Accordion for legacy tools (eGFR) */}
+                <div className="space-y-3 pb-4">
+                  {/* Nephrology: eGFR */}
+                  {showNephro && (
+                    <details className="bg-white border border-slate-200 rounded-2xl shadow-sm">
+                      <summary className="flex items-center justify-between px-4 py-3 cursor-pointer">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+                            <Droplets size={14} />
+                          </div>
+                          <span className="text-sm font-semibold text-slate-800">
+                            Nephrology · eGFR (MDRD)
+                          </span>
+                        </div>
+                      </summary>
+                      <div className="px-4 pb-4 pt-1 space-y-3">
                         <div className="flex gap-3">
                           <InputField label="Age" type="text" inputMode="decimal" value={egfrAge} onChange={(e:any) => setEgfrAge(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="Yrs" />
                           <div className="space-y-1.5 flex-1">
@@ -464,7 +561,7 @@ export const SettingsModal: React.FC<Props> = ({
                         <InputField label="Creatinine (mg/dL)" type="text" inputMode="decimal" value={egfrCr} onChange={(e:any) => setEgfrCr(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 1.2" />
                         
                         {egfrResult !== null && (
-                          <div className="pt-4 mt-4 border-t border-slate-100 flex justify-between items-end">
+                          <div className="pt-3 mt-2 border-t border-slate-100 flex justify-between items-end">
                             <div>
                               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">mL/min/1.73m²</p>
                               <p className="text-2xl font-bold text-slate-800 leading-none">{egfrResult}</p>
@@ -475,101 +572,8 @@ export const SettingsModal: React.FC<Props> = ({
                           </div>
                         )}
                       </div>
-                    </div>
+                    </details>
                   )}
-
-                  {/* SURGERY / IM: Wells Score */}
-                  {(showSurgery || showSuggested) && (
-                    <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm hover:border-rose-200 hover:shadow-md transition-all h-fit animate-in fade-in zoom-in-95 group">
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="w-8 h-8 bg-rose-50 text-rose-600 rounded-lg flex items-center justify-center group-hover:bg-rose-100 transition-colors"><Activity size={16} /></div>
-                        <div>
-                           <h4 className="font-semibold text-sm text-slate-800 leading-tight">Wells Criteria (DVT)</h4>
-                           {showSuggested && <p className="text-[9px] font-semibold text-teal-600 uppercase tracking-wider">Suggested for you</p>}
-                        </div>
-                      </div>
-                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-2 custom-scrollbar border border-slate-100 p-2 rounded-xl bg-slate-50/50">
-                        {[
-                          { key: 'cancer', label: 'Active Cancer (+1)' },
-                          { key: 'paralysis', label: 'Paralysis or Cast (+1)' },
-                          { key: 'bedridden', label: 'Bedridden > 3 days (+1)' },
-                          { key: 'tenderness', label: 'Localized Tenderness (+1)' },
-                          { key: 'swollenLeg', label: 'Entire Leg Swollen (+1)' },
-                          { key: 'calfSwelling', label: 'Calf Swelling > 3cm (+1)' },
-                          { key: 'pittingEdema', label: 'Pitting Edema (+1)' },
-                          { key: 'collateralVeins', label: 'Collateral Veins (+1)' },
-                          { key: 'prevDVT', label: 'Previous DVT (+1)' },
-                          { key: 'altDiagnosis', label: 'Alt. Diagnosis Likely (-2)' }
-                        ].map((item) => (
-                          <label key={item.key} className="flex items-center gap-2.5 p-1.5 rounded hover:bg-white cursor-pointer transition-colors">
-                            <input 
-                              type="checkbox" 
-                              checked={wellsCriteria[item.key as keyof typeof wellsCriteria]}
-                              onChange={(e) => setWellsCriteria({...wellsCriteria, [item.key]: e.target.checked})}
-                              className="w-3.5 h-3.5 text-rose-600 rounded border-slate-300 focus:ring-rose-500 cursor-pointer" 
-                            />
-                            <span className="text-xs text-slate-600">{item.label}</span>
-                          </label>
-                        ))}
-                      </div>
-                      <div className="pt-4 mt-4 border-t border-slate-100 flex justify-between items-end">
-                         <div>
-                           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Total Score</p>
-                           <p className="text-2xl font-bold text-slate-800 leading-none">{wellsResult}</p>
-                         </div>
-                         <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${wellsResult >= 3 ? 'bg-rose-100 text-rose-700' : wellsResult >= 1 ? 'bg-orange-100 text-orange-800' : 'bg-teal-50 text-teal-700'}`}>
-                            {wellsResult >= 3 ? 'High Risk' : wellsResult >= 1 ? 'Mod Risk' : 'Low Risk'}
-                         </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* EMERGENCY: GCS */}
-                  {(showEmergency || (showSuggested && !showSurgery)) && (
-                    <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm hover:border-purple-200 hover:shadow-md transition-all h-fit animate-in fade-in zoom-in-95 group">
-                      <div className="flex items-center gap-3 mb-5">
-                        <div className="w-8 h-8 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center group-hover:bg-purple-100 transition-colors"><Brain size={16} /></div>
-                        <div>
-                           <h4 className="font-semibold text-sm text-slate-800 leading-tight">Glasgow Coma Scale</h4>
-                           {showSuggested && !showSurgery && <p className="text-[9px] font-semibold text-teal-600 uppercase tracking-wider">Suggested for you</p>}
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                         <div className="space-y-1">
-                           <div className="flex justify-between items-end mb-1">
-                             <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Eye (1-4)</label>
-                             <span className="text-xs font-semibold text-purple-700">{gcsEye} pts</span>
-                           </div>
-                           <input type="range" min="1" max="4" value={gcsEye} onChange={(e) => setGcsEye(parseInt(e.target.value))} className="w-full accent-purple-600 h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer" />
-                         </div>
-                         <div className="space-y-1">
-                           <div className="flex justify-between items-end mb-1">
-                             <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Verbal (1-5)</label>
-                             <span className="text-xs font-semibold text-purple-700">{gcsVerbal} pts</span>
-                           </div>
-                           <input type="range" min="1" max="5" value={gcsVerbal} onChange={(e) => setGcsVerbal(parseInt(e.target.value))} className="w-full accent-purple-600 h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer" />
-                         </div>
-                         <div className="space-y-1">
-                           <div className="flex justify-between items-end mb-1">
-                             <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Motor (1-6)</label>
-                             <span className="text-xs font-semibold text-purple-700">{gcsMotor} pts</span>
-                           </div>
-                           <input type="range" min="1" max="6" value={gcsMotor} onChange={(e) => setGcsMotor(parseInt(e.target.value))} className="w-full accent-purple-600 h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer" />
-                         </div>
-                         
-                         <div className="pt-4 mt-4 border-t border-slate-100 flex justify-between items-end">
-                           <div>
-                             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Total GCS</p>
-                             <p className="text-2xl font-bold text-slate-800 leading-none">{gcsResult}</p>
-                           </div>
-                           <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${gcsResult <= 8 ? 'bg-rose-100 text-rose-700' : gcsResult <= 12 ? 'bg-orange-100 text-orange-800' : 'bg-teal-50 text-teal-700'}`}>
-                              {gcsResult <= 8 ? 'Severe' : gcsResult <= 12 ? 'Moderate' : 'Mild'}
-                           </div>
-                         </div>
-                      </div>
-                    </div>
-                  )}
-                  
                 </div>
               </div>
             )}
@@ -613,6 +617,42 @@ export const SettingsModal: React.FC<Props> = ({
             </div>
           )}
         </div>
+
+        {/* INLINE SCORING CALCULATOR OVERLAY */}
+        {activeScoringSystem && (
+          <div
+            className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4"
+            onClick={() => setActiveScoringId(null)}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col border border-slate-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveScoringId(null)}
+                    className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-2 py-1 text-slate-500 hover:text-teal-700 hover:border-teal-200 hover:bg-teal-50 transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      {activeScoringSystem.category}
+                    </span>
+                    <span className="text-sm font-semibold text-slate-900">
+                      {activeScoringSystem.title}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                <CalculatorView system={activeScoringSystem} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

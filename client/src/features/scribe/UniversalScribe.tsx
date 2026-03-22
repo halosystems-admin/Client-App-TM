@@ -6,9 +6,11 @@ interface Props {
   onTranscriptionComplete: (text: string) => void;
   onError?: (message: string) => void;
   customTemplate?: string;
+  /** Allows parent to intercept the start of recording (e.g. to enforce template selection). */
+  onRequestStartRecording?: (start: () => void) => void;
 }
 
-export const UniversalScribe: React.FC<Props> = ({ onTranscriptionComplete, onError, customTemplate }) => {
+export const UniversalScribe: React.FC<Props> = ({ onTranscriptionComplete, onError, customTemplate, onRequestStartRecording }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [longWait, setLongWait] = useState(false);
@@ -124,7 +126,17 @@ export const UniversalScribe: React.FC<Props> = ({ onTranscriptionComplete, onEr
 
       {/* Compact FAB button */}
       <button
-        onClick={isRecording ? stopRecording : startRecording}
+        onClick={
+          isRecording || isProcessing
+            ? stopRecording
+            : () => {
+                if (onRequestStartRecording && !isRecording) {
+                  onRequestStartRecording(startRecording);
+                } else {
+                  startRecording();
+                }
+              }
+        }
         disabled={isProcessing}
         title={isRecording ? 'Stop recording' : isProcessing ? 'Processing...' : 'Launch Scribe'}
         className={`flex items-center justify-center rounded-full shadow-lg transition-all duration-200 ${

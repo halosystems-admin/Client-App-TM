@@ -176,10 +176,18 @@ export const getFileDownloadUrl = (fileId: string) =>
     `/api/drive/files/${fileId}/download`
   );
 
-export const saveNote = (patientId: string, content: string) =>
+export const saveNote = (
+  patientId: string,
+  content: string,
+  opts?: { fileName?: string; folderPath?: string }
+) =>
   request<{ success: boolean; folderId?: string }>(`/api/drive/patients/${patientId}/note`, {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({
+      content,
+      ...(opts?.fileName ? { fileName: opts.fileName } : {}),
+      ...(opts?.folderPath ? { folderPath: opts.folderPath } : {}),
+    }),
   });
 
 export const createFolder = (parentId: string, name: string) =>
