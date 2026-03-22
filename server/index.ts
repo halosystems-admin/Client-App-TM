@@ -15,6 +15,11 @@ import { requireAuth } from './middleware/requireAuth';
 import { startScheduler } from './jobs/scheduler';
 
 const app = express();
+
+// --- CRITICAL HEROKU FIX ---
+// Tells Express to trust the Heroku proxy so secure cookies are sent properly
+app.set('trust proxy', 1);
+
 const FileStore = FileStoreFactory(session);
 
 // --- Global Rate Limiter ---
@@ -64,7 +69,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: config.isProduction,
+    secure: config.isProduction, // Now this will work on Heroku!
     httpOnly: true,
     sameSite: config.isProduction ? 'none' : 'lax',
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
