@@ -90,10 +90,12 @@ app.use(
   session({
     store: createSessionStore(),
     secret: config.sessionSecret || 'fallback-secret-key',
+    proxy: config.isProduction,
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: config.isProduction,
+      // iOS/Safari cross-site cookie requirement for OAuth: Secure + SameSite=None
+      secure: config.isProduction ? true : false,
       httpOnly: true,
       sameSite: config.isProduction ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
