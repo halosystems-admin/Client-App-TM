@@ -98,9 +98,9 @@ export const CalculatorView: React.FC<Props> = ({ system }) => {
             return (
               <div
                 key={criterion.id}
-                className="rounded-2xl bg-white border border-slate-100 px-4 py-3 shadow-sm flex items-center justify-between gap-3"
+                className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
               >
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-800">{criterion.label}</p>
                   {criterion.helperText && (
                     <p className="mt-1 text-xs text-slate-500">{criterion.helperText}</p>
@@ -112,7 +112,7 @@ export const CalculatorView: React.FC<Props> = ({ system }) => {
                 <button
                   type="button"
                   onClick={() => handleToggleBinary(criterion.id)}
-                  className={`relative inline-flex h-9 min-w-[80px] items-center justify-center rounded-full px-4 text-xs font-bold uppercase tracking-wide transition-all ${
+                  className={`relative inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-full px-4 text-xs font-bold uppercase tracking-wide transition-all sm:h-11 sm:w-auto sm:min-w-[5.5rem] ${
                     active
                       ? 'bg-teal-600 text-white shadow-md shadow-teal-600/30'
                       : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
@@ -139,7 +139,7 @@ export const CalculatorView: React.FC<Props> = ({ system }) => {
                     )}
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="-mx-1 flex max-w-full flex-nowrap gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain px-1 pb-1 [-webkit-overflow-scrolling:touch] custom-scrollbar-x sm:flex-wrap sm:overflow-visible">
                   {criterion.options.map((option) => {
                     const active = option.id === selectedId;
                     return (
@@ -147,14 +147,14 @@ export const CalculatorView: React.FC<Props> = ({ system }) => {
                         key={option.id}
                         type="button"
                         onClick={() => handleSelectOption(criterion.id, option.id)}
-                        className={`inline-flex items-center justify-center rounded-full px-3 py-2 text-xs font-semibold transition-all border ${
+                        className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-full border px-3 py-2 text-left text-xs font-semibold transition-all last:mr-0 sm:min-h-0 sm:shrink ${
                           active
-                            ? 'bg-teal-600 text-white border-teal-600 shadow-md shadow-teal-600/30'
-                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                            ? 'border-teal-600 bg-teal-600 text-white shadow-md shadow-teal-600/30'
+                            : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
                         }`}
                       >
-                        <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-current opacity-70" />
-                        {option.label}
+                        <span className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-70" />
+                        <span className="whitespace-nowrap">{option.label}</span>
                       </button>
                     );
                   })}
@@ -169,29 +169,34 @@ export const CalculatorView: React.FC<Props> = ({ system }) => {
             return (
               <div
                 key={criterion.id}
-                className="rounded-2xl bg-white border border-slate-100 px-4 py-3 shadow-sm"
+                className="rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex-1">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-slate-800">{criterion.label}</p>
                     {criterion.helperText && (
                       <p className="mt-1 text-xs text-slate-500">{criterion.helperText}</p>
                     )}
-                    <p className="mt-1 text-[11px] text-slate-400">
-                      Bands:{' '}
-                      {criterion.ranges
-                        .map((r) => r.label ?? `${r.minValue ?? '–'}–${r.maxValue ?? '–'}`)
-                        .join(' / ')}
-                    </p>
+                    <div className="mt-2 max-w-full overflow-x-auto rounded-lg bg-slate-50/80 py-1.5 pl-1 pr-1 [-webkit-overflow-scrolling:touch] custom-scrollbar-x sm:mr-2">
+                      <p className="min-w-max px-1 text-[11px] leading-relaxed text-slate-500">
+                        <span className="font-semibold text-slate-500">Bands: </span>
+                        {criterion.ranges
+                          .map((r) => r.label ?? `${r.minValue ?? '–'}–${r.maxValue ?? '–'}`)
+                          .join(' · ')}
+                      </p>
+                    </div>
                   </div>
-                  <div className="w-24 shrink-0">
+                  <div className="w-full shrink-0 sm:w-28">
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500 sm:sr-only">
+                      Value
+                    </label>
                     <input
                       type="number"
                       inputMode="decimal"
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm font-semibold text-slate-800 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition"
+                      className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm font-semibold text-slate-800 transition outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
                       value={numericValue}
                       onChange={(e) => handleNumericChange(criterion.id, e.target.value)}
-                      placeholder={criterion.unit || ''}
+                      placeholder={criterion.unit || 'Value'}
                     />
                   </div>
                 </div>

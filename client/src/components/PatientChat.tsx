@@ -11,10 +11,22 @@ interface PatientChatProps {
   chatLoading: boolean;
   chatLongWait?: boolean;
   onSendChat: () => void;
+  /** Optional root className (e.g. bottom sheet rounding). */
+  className?: string;
+  /** Hide gradient header (e.g. when sheet has its own title). */
+  hideHeader?: boolean;
 }
 
 export const PatientChat: React.FC<PatientChatProps> = ({
-  patientName, chatMessages, chatInput, onChatInputChange, chatLoading, chatLongWait, onSendChat,
+  patientName,
+  chatMessages,
+  chatInput,
+  onChatInputChange,
+  chatLoading,
+  chatLongWait,
+  onSendChat,
+  className = '',
+  hideHeader = false,
 }) => {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -23,17 +35,19 @@ export const PatientChat: React.FC<PatientChatProps> = ({
   }, [chatMessages, chatLoading]);
 
   return (
-    <div className="h-[600px] flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className="bg-gradient-to-r from-teal-50 to-cyan-50 px-4 py-3 border-b border-slate-200 flex items-center gap-2">
-        <MessageCircle size={16} className="text-teal-600" />
-        <span className="text-sm font-bold text-teal-800 uppercase tracking-wider">Ask HALO?</span>
-        <span className="text-xs text-slate-400 ml-2">AI-powered patient data assistant</span>
-      </div>
+    <div className={`flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${className}`.trim()}>
+      {!hideHeader && (
+        <div className="shrink-0 bg-gradient-to-r from-teal-50 to-cyan-50 px-4 py-3 border-b border-slate-200 flex items-center gap-2">
+          <MessageCircle size={16} className="text-teal-600 shrink-0" />
+          <span className="text-sm font-bold text-teal-800 uppercase tracking-wider">Ask HALO?</span>
+          <span className="text-xs text-slate-400 ml-2 hidden sm:inline">AI-powered patient data assistant</span>
+        </div>
+      )}
 
       {/* Chat messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         {chatMessages.length === 0 && !chatLoading && (
-          <div className="flex flex-col items-center justify-center h-full text-center">
+          <div className="flex min-h-[min(24rem,100%)] flex-col items-center justify-center py-8 text-center">
             <div className="w-16 h-16 bg-teal-50 rounded-full flex items-center justify-center mb-4">
               <MessageCircle size={28} className="text-teal-400" />
             </div>
@@ -41,12 +55,13 @@ export const PatientChat: React.FC<PatientChatProps> = ({
             <p className="text-sm text-slate-400 max-w-sm">
               I can answer questions about <span className="font-semibold text-slate-500">{patientName}</span>'s files and clinical data.
             </p>
-            <div className="mt-4 flex flex-wrap gap-2 justify-center">
+            <div className="mt-4 flex max-w-md flex-wrap justify-center gap-2 px-2">
               {['Summarize recent notes', 'Any abnormal lab results?', 'What medications are listed?'].map(q => (
                 <button
                   key={q}
+                  type="button"
                   onClick={() => onChatInputChange(q)}
-                  className="text-xs px-3 py-1.5 bg-slate-100 hover:bg-teal-50 text-slate-600 hover:text-teal-700 rounded-full transition-colors border border-slate-200 hover:border-teal-200"
+                  className="min-h-11 rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-left text-xs text-slate-600 transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 sm:text-center"
                 >
                   {q}
                 </button>
@@ -109,7 +124,7 @@ export const PatientChat: React.FC<PatientChatProps> = ({
       </div>
 
       {/* Chat input */}
-      <div className="border-t border-slate-200 p-3 bg-slate-50">
+      <div className="shrink-0 border-t border-slate-200 bg-slate-50 p-3 pb-safe">
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -117,13 +132,14 @@ export const PatientChat: React.FC<PatientChatProps> = ({
             onChange={e => onChatInputChange(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSendChat(); } }}
             placeholder="Ask a question about this patient..."
-            className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition placeholder:text-slate-400"
+            className="min-h-11 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
             disabled={chatLoading}
           />
           <button
+            type="button"
             onClick={onSendChat}
             disabled={!chatInput.trim() || chatLoading}
-            className="p-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl disabled:opacity-40 transition-all shadow-sm"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-600 text-white shadow-sm transition-all hover:bg-teal-700 disabled:opacity-40"
           >
             <Send size={18} />
           </button>

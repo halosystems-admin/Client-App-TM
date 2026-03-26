@@ -1,7 +1,98 @@
 @import "tailwindcss";
 
+/* Safe-area + shell: use with fixed bottom UI (nav, FAB, sheets) */
+:root {
+  /* Floating tab bar + safe area */
+  /* Single-row nav + record pill; extra room when record status chip shows */
+  --halo-bottom-nav-height: 6.5rem;
+  /* Scroll padding so file row actions clear fixed Scribe + Ask HALO (see PatientWorkspace overview pane) */
+  --halo-scribe-fab-clearance: 6.75rem;
+  --halo-scribe-fab-clearance-lg: 5.5rem;
+}
+
+.pb-overview-scroll {
+  padding-bottom: calc(
+    var(--halo-scribe-fab-clearance) + env(safe-area-inset-bottom, 0px)
+  );
+}
+
+@media (min-width: 1024px) {
+  .pb-overview-scroll {
+    padding-bottom: calc(
+      var(--halo-scribe-fab-clearance-lg) + env(safe-area-inset-bottom, 0px)
+    );
+  }
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.pb-bottom-nav {
+  padding-bottom: calc(var(--halo-bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+}
+
+.min-h-dvh {
+  min-height: 100dvh;
+}
+
+/* Scrollbars: visible thin bars so horizontal strips (e.g. scoring categories) are discoverable on mobile/desktop */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184 / 0.75) rgb(241 245 249 / 0.6);
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgb(148 163 184 / 0.65);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgb(241 245 249 / 0.5);
+  border-radius: 9999px;
+}
+
+/* Primary horizontal rails (category chips, option rows) */
+.custom-scrollbar-x {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184 / 0.85) rgb(241 245 249 / 0.55);
+  -webkit-overflow-scrolling: touch;
+}
+.custom-scrollbar-x::-webkit-scrollbar {
+  height: 10px;
+}
+.custom-scrollbar-x::-webkit-scrollbar-thumb {
+  background-color: rgb(100 116 139 / 0.55);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.custom-scrollbar-x::-webkit-scrollbar-track {
+  background: rgb(226 232 240 / 0.65);
+  border-radius: 9999px;
+}
+
+html,
 body {
+  height: 100%;
+  min-height: 100dvh;
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 100vh;
+  min-height: 100dvh;
 }

@@ -39,8 +39,8 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   noteContent, onNoteContentChange, editMode, onEditModeChange, status, onSave,
 }) => {
   return (
-    <div className="h-[600px] flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center flex-wrap gap-2">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="shrink-0 bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center flex-wrap gap-2">
         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Clinical Note Editor</span>
         <div className="flex items-center gap-2">
           <div className="flex bg-slate-200 p-0.5 rounded-lg">
@@ -60,11 +60,18 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         </div>
       </div>
       {editMode === 'write' ? (
-        <textarea value={noteContent} onChange={(e) => onNoteContentChange(e.target.value)} placeholder="Start typing or use the Scribe button to dictate..." className="flex-1 w-full p-6 focus:outline-none resize-none font-mono text-sm leading-relaxed text-slate-700" />
+        <textarea
+          value={noteContent}
+          onChange={(e) => onNoteContentChange(e.target.value)}
+          placeholder="Start typing or use the Scribe button to dictate..."
+          className="min-h-0 flex-1 w-full resize-none overflow-y-auto p-6 font-mono text-sm leading-relaxed text-slate-700 focus:outline-none"
+        />
       ) : (
-        <div className="flex-1 w-full p-6 overflow-y-auto bg-white"><div className="prose prose-sm prose-slate max-w-none">{renderMarkdown(noteContent)}</div></div>
+        <div className="min-h-0 flex-1 w-full overflow-y-auto bg-white p-6">
+          <div className="prose prose-sm prose-slate max-w-none">{renderMarkdown(noteContent)}</div>
+        </div>
       )}
-      <div className="bg-slate-50 border-t border-slate-200 p-4 flex justify-start">
+      <div className="shrink-0 bg-slate-50 border-t border-slate-200 p-4 flex justify-start">
         <button onClick={onSave} disabled={status === AppStatus.FILING || status === AppStatus.SAVING || !noteContent} className="flex items-center gap-2 bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 disabled:opacity-50 font-medium transition-all shadow-sm">
           <Save className="w-4 h-4" /> {status === AppStatus.FILING ? 'Filing...' : 'Save Note'}
         </button>

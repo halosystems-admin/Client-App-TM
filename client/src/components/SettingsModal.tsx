@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { UserSettings } from '../../../shared/types';
 import {
   X, Pencil, Save, User, Clock, Briefcase, MapPin, GraduationCap,
-  FileText, Upload, Check, AlertCircle, RefreshCw, Loader2, 
-  Settings as SettingsIcon, BarChart3, Plus, Droplets, Activity, Brain
+  FileText, Upload, Check, AlertCircle, RefreshCw, Loader2,
+  Settings as SettingsIcon, BarChart3, Plus, Droplets, Activity, Brain, Smartphone,
 } from 'lucide-react';
 import { runSchedulerNow } from '../services/api';
 import { CustomTemplates } from './settings/CustomTemplates';
@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   firstName: '', lastName: '', profession: '', department: '',
   city: '', postalCode: '', university: '', noteTemplate: 'soap',
   customTemplateContent: '', customTemplateName: '',
+  showScoringInBottomNav: true,
 };
 
 interface Props {
@@ -27,9 +28,14 @@ interface Props {
   userId?: string;
   notesApiAvailable?: boolean;
   loginTime: number;
+  /** When the modal opens, switch to this tab (e.g. profile from empty-state CTA). */
+  initialTab?: SettingsModalTab;
+  /** If `initialTab` is `profile`, open directly in edit mode. */
+  openProfileInEditMode?: boolean;
 }
 
-type TabType = 'profile' | 'templates' | 'tools' | 'automations' | 'usage';
+export type SettingsModalTab = 'profile' | 'templates' | 'tools' | 'automations' | 'usage';
+type TabType = SettingsModalTab;
 type TemplateTabType = 'soap' | 'custom' | 'practice';
 
 // 1. Paste this ABOVE the export const SettingsModal line!
@@ -70,7 +76,16 @@ function getCategoryTheme(category: string): { icon: React.ElementType; bg: stri
 }
 
 export const SettingsModal: React.FC<Props> = ({
-  isOpen, onClose, settings, onSave, userEmail, userId, notesApiAvailable, loginTime,
+  isOpen,
+  onClose,
+  settings,
+  onSave,
+  userEmail,
+  userId,
+  notesApiAvailable,
+  loginTime,
+  initialTab,
+  openProfileInEditMode = false,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('profile');
   const [editMode, setEditMode] = useState(false);
@@ -107,6 +122,7 @@ export const SettingsModal: React.FC<Props> = ({
 
   // --- GLOBAL SCORING STATE ---
   const [activeScoringId, setActiveScoringId] = useState<string | null>(null);
+  const [savingBottomNavPref, setSavingBottomNavPref] = useState(false);
 
   // --- CALCULATIONS ---
   const calculateBMI = () => {
@@ -176,6 +192,24 @@ export const SettingsModal: React.FC<Props> = ({
     setSaving(false);
   };
 
+  const handleShowScoringInBottomNavChange = async (enabled: boolean) => {
+    const updated: UserSettings = {
+      ...form,
+      showScoringInBottomNav: enabled,
+      noteTemplate: templateTab === 'custom' ? 'custom' : 'soap',
+    };
+    const prev = form.showScoringInBottomNav;
+    setForm(updated);
+    setSavingBottomNavPref(true);
+    try {
+      await onSave(updated);
+    } catch {
+      setForm((f) => ({ ...f, showScoringInBottomNav: prev }));
+    } finally {
+      setSavingBottomNavPref(false);
+    }
+  };
+
   const handleTemplateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -196,10 +230,21 @@ export const SettingsModal: React.FC<Props> = ({
   // --- EFFECTS ---
   useEffect(() => {
     if (settings) {
-      setForm(settings);
+      setForm({ ...DEFAULT_SETTINGS, ...settings });
       setTemplateTab((settings.noteTemplate === 'custom' ? 'custom' : 'soap'));
     }
   }, [settings]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (initialTab) {
+      setActiveTab(initialTab);
+      setEditMode(initialTab === 'profile' && openProfileInEditMode);
+    } else {
+      setActiveTab('profile');
+      setEditMode(false);
+    }
+  }, [isOpen, initialTab, openProfileInEditMode]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -533,7 +578,7 @@ export const SettingsModal: React.FC<Props> = ({
                 </div>
 
                 {/* Accordion for legacy tools (eGFR) */}
-                <div className="space-y-3 pb-4">
+                <div className="space-y-3">
                   {/* Nephrology: eGFR */}
                   {showNephro && (
                     <details className="bg-white border border-slate-200 rounded-2xl shadow-sm">
@@ -574,6 +619,38 @@ export const SettingsModal: React.FC<Props> = ({
                       </div>
                     </details>
                   )}
+                </div>
+
+                <div className="mt-5 border-t border-slate-200 pt-4">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Mobile workspace
+                  </p>
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                    <div className="flex min-w-0 items-start gap-2">
+                      <Smartphone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-slate-800">Scoring tab in bottom bar</p>
+                        <p className="text-[10px] leading-snug text-slate-500">
+                          Small screens only. Recording button stays as is.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {savingBottomNavPref && (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-600" aria-hidden />
+                      )}
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        checked={form.showScoringInBottomNav !== false}
+                        disabled={savingBottomNavPref}
+                        onChange={(e) =>
+                          void handleShowScoringInBottomNavChange(e.target.checked)
+                        }
+                        aria-label="Show scoring in mobile bottom navigation"
+                      />
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -625,7 +702,7 @@ export const SettingsModal: React.FC<Props> = ({
             onClick={() => setActiveScoringId(null)}
           >
             <div
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col border border-slate-200"
+              className="flex min-h-0 min-w-0 w-full max-w-xl max-h-[85vh] flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
@@ -647,7 +724,7 @@ export const SettingsModal: React.FC<Props> = ({
                   </div>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+              <div className="min-h-0 min-w-0 flex-1 overflow-auto p-4 custom-scrollbar [-webkit-overflow-scrolling:touch]">
                 <CalculatorView system={activeScoringSystem} />
               </div>
             </div>

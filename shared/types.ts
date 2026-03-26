@@ -61,6 +61,8 @@ export interface UserSettings {
   noteTemplate: 'soap' | 'custom';
   customTemplateContent: string;
   customTemplateName: string;
+  /** When false (or omitted for legacy saves), hide Scoring from the mobile bottom bar only; desktop tabs unchanged. */
+  showScoringInBottomNav?: boolean;
 }
 
 // --- Notes / templates (FastAPI) ---

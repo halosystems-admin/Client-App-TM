@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
+import { useMediaQuery } from './hooks/useMediaQuery';
 import { PatientWorkspace } from './pages/PatientWorkspace';
 import { Toast } from './components/Toast';
-import { SettingsModal } from './components/SettingsModal';
+import { SettingsModal, type SettingsModalTab } from './components/SettingsModal';
 import { CalendarModal } from './components/CalendarModal';
 import {
   checkAuth,
@@ -18,10 +19,52 @@ import {
   ApiError,
 } from './services/api';
 import type { Patient, UserSettings } from '../../shared/types';
-import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, Clock, Play } from 'lucide-react';
+import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, Clock, Play, User, PanelLeft } from 'lucide-react';
+
+const HAS_OPENED_PATIENT_KEY = 'halo_hasOpenedPatient';
+
+function readHasOpenedPatient(): boolean {
+  try {
+    return sessionStorage.getItem(HAS_OPENED_PATIENT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function persistHasOpenedPatient(): void {
+  try {
+    sessionStorage.setItem(HAS_OPENED_PATIENT_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearHasOpenedPatient(): void {
+  try {
+    sessionStorage.removeItem(HAS_OPENED_PATIENT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function isPractitionerProfileComplete(s: UserSettings | null | undefined): boolean {
+  if (!s) return false;
+  return [s.firstName, s.lastName, s.profession, s.department].every((x) => !!String(x ?? '').trim());
+}
 
 export const App = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [patientsDrawerOpen, setPatientsDrawerOpen] = useState(false);
+  const [hasOpenedPatient, setHasOpenedPatient] = useState(() => {
+    if (readHasOpenedPatient()) return true;
+    try {
+      return !!sessionStorage.getItem('halo_selectedPatientId');
+    } catch {
+      return false;
+    }
+  });
+  const isLg = useMediaQuery('(min-width: 1024px)');
+  const prevSelectedPatientRef = useRef<string | null | undefined>(undefined);
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(
     () => sessionStorage.getItem('halo_selectedPatientId')
   );
@@ -38,6 +81,8 @@ export const App = () => {
 
   // Settings / profile state
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsModalTab | undefined>(undefined);
+  const [settingsOpenProfileEdit, setSettingsOpenProfileEdit] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [userEmail, setUserEmail] = useState<string | undefined>();
   const [userId, setUserId] = useState<string | undefined>();
@@ -69,6 +114,8 @@ export const App = () => {
     setSelectedPatientId(id);
     if (id) {
       sessionStorage.setItem('halo_selectedPatientId', id);
+      persistHasOpenedPatient();
+      setHasOpenedPatient(true);
       // Push to recent list (most recent first, deduped, max 3)
       setRecentPatientIds(prev => {
         const updated = [id, ...prev.filter(pid => pid !== id)].slice(0, 3);
@@ -96,6 +143,28 @@ export const App = () => {
     return data;
   }, []);
 
+  const selectPatientFromDrawer = useCallback(
+    (id: string) => {
+      selectPatient(id);
+      setPatientsDrawerOpen(false);
+    },
+    [selectPatient]
+  );
+
+  useEffect(() => {
+    const prev = prevSelectedPatientRef.current;
+    prevSelectedPatientRef.current = selectedPatientId;
+    if (
+      prev !== undefined &&
+      prev !== null &&
+      selectedPatientId === null &&
+      hasOpenedPatient &&
+      !isLg
+    ) {
+      setPatientsDrawerOpen(true);
+    }
+  }, [selectedPatientId, hasOpenedPatient, isLg]);
+
   // Check if user has an active session
   useEffect(() => {
     const checkSession = async () => {
@@ -109,7 +178,10 @@ export const App = () => {
           const loadedPatients = await refreshPatients();
           // Validate stored patient selection — clear if patient no longer exists
           const storedId = sessionStorage.getItem('halo_selectedPatientId');
-          if (storedId && !loadedPatients.find(p => p.id === storedId)) {
+          if (storedId && loadedPatients.find(p => p.id === storedId)) {
+            persistHasOpenedPatient();
+            setHasOpenedPatient(true);
+          } else if (storedId && !loadedPatients.find(p => p.id === storedId)) {
             selectPatient(null);
           }
           // Load settings in background
@@ -132,10 +204,16 @@ export const App = () => {
   }, []);
 
   const handleSignIn = async () => {
+    if (loading) return;
     setLoading(true);
     try {
       const { url } = await getLoginUrl();
-      window.location.href = url;
+      if (!url || typeof url !== 'string') {
+        showToast('Sign-in response was invalid. Check server logs.', 'error');
+        setLoading(false);
+        return;
+      }
+      window.location.assign(url);
     } catch (error) {
       showToast(getErrorMessage(error), 'error');
       setLoading(false);
@@ -145,6 +223,8 @@ export const App = () => {
   const handleLogout = async () => {
     await logout();
     setIsSignedIn(false);
+    clearHasOpenedPatient();
+    setHasOpenedPatient(false);
     selectPatient(null);
   };
 
@@ -181,6 +261,24 @@ export const App = () => {
     showToast('Settings saved.', 'success');
   };
 
+  const openSettingsDefault = useCallback(() => {
+    setSettingsInitialTab(undefined);
+    setSettingsOpenProfileEdit(false);
+    setShowSettings(true);
+  }, []);
+
+  const openPractitionerProfileSettings = useCallback(() => {
+    setSettingsInitialTab('profile');
+    setSettingsOpenProfileEdit(true);
+    setShowSettings(true);
+  }, []);
+
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    setSettingsInitialTab(undefined);
+    setSettingsOpenProfileEdit(false);
+  }, []);
+
   const handleRunScheduler = async () => {
     setSchedulerRunning(true);
     try {
@@ -216,44 +314,70 @@ export const App = () => {
 
   if (!isReady) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-4">
-          <Loader className="animate-spin text-teal-600" size={32} />
-          <p className="text-sm text-slate-400 font-medium">Loading HALO...</p>
+      <>
+        <div className="flex min-h-0 flex-1 w-full items-center justify-center bg-slate-50">
+          <div className="flex flex-col items-center gap-4">
+            <Loader className="animate-spin text-teal-600" size={32} />
+            <p className="text-sm text-slate-400 font-medium">Loading HALO...</p>
+          </div>
         </div>
-      </div>
+        {toast && (
+          <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        )}
+      </>
     );
   }
 
   if (!isSignedIn) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-white">
-        <div className="max-w-sm w-full text-center px-6">
-          <img
-            src="/halo-medical-logo.png"
-            alt="HALO Medical"
-            className="w-48 h-auto mx-auto mb-6 select-none"
-            draggable={false}
-          />
-          <h1 className="text-3xl font-bold text-slate-800 mb-2">Welcome to HALO</h1>
-          <p className="text-slate-500 mb-8 leading-relaxed">Sign in to access your Secure Patient Drive.</p>
+      <>
+        <div className="flex min-h-0 flex-1 w-full items-center justify-center bg-white">
+          <div className="max-w-sm w-full px-6 text-center">
+            <img
+              src="/halo-medical-logo.png"
+              alt="HALO Medical"
+              className="mx-auto mb-6 h-auto w-48 select-none"
+              draggable={false}
+            />
+            <h1 className="mb-2 text-3xl font-bold text-slate-800">Welcome to HALO</h1>
+            <p className="mb-8 leading-relaxed text-slate-500">Sign in to access your Secure Patient Drive.</p>
 
-          <button onClick={handleSignIn} className="w-full flex items-center justify-center gap-3 bg-teal-600 hover:bg-teal-700 text-white px-6 py-4 rounded-xl transition-all shadow-md hover:shadow-lg font-semibold text-lg active:scale-[0.98]">
-            {loading ? <Loader className="animate-spin" /> : <LogIn size={20} />}
-            {loading ? "Connecting..." : "Sign In with Google"}
-          </button>
+            <button
+              type="button"
+              onClick={handleSignIn}
+              disabled={loading}
+              className="flex w-full items-center justify-center gap-3 rounded-xl bg-teal-600 px-6 py-4 text-lg font-semibold text-white shadow-md transition-all hover:bg-teal-700 hover:shadow-lg active:scale-[0.98] disabled:opacity-70"
+            >
+              {loading ? <Loader className="animate-spin" /> : <LogIn size={20} />}
+              {loading ? 'Connecting...' : 'Sign In with Google'}
+            </button>
 
-          <p className="mt-8 text-xs text-slate-400">Secure Environment &bull; POPIA Compliant</p>
+            <p className="mt-8 text-xs text-slate-400">Secure Environment &bull; POPIA Compliant</p>
+          </div>
         </div>
-      </div>
+        {toast && (
+          <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        )}
+      </>
     );
   }
 
   const activePatient = patients.find(p => p.id === selectedPatientId);
+  const showInlineSidebar = !!selectedPatientId || hasOpenedPatient;
+  const showPatientDrawer = patientsDrawerOpen && (!selectedPatientId || !isLg);
+  const isFirstHomeLanding = !selectedPatientId && !hasOpenedPatient;
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
-      <div className={`${selectedPatientId ? 'hidden md:flex' : 'flex'} h-full shrink-0 z-20`}>
+    <div
+      className={`relative flex min-h-0 w-full flex-1 overflow-hidden bg-slate-50 font-sans text-slate-900 min-h-dvh ${
+        isFirstHomeLanding ? 'flex-col' : 'flex-row'
+      }`}
+    >
+      <div
+        className={`${
+          showInlineSidebar ? 'hidden lg:flex' : 'hidden'
+        } z-20 h-auto min-h-0 shrink-0 md:h-full`}
+      >
         <Sidebar
           patients={patients}
           selectedPatientId={selectedPatientId}
@@ -262,45 +386,160 @@ export const App = () => {
           onCreatePatient={openCreateModal}
           onDeletePatient={handleDeleteRequest}
           onLogout={handleLogout}
-          onOpenSettings={() => setShowSettings(true)}
+          onOpenSettings={openSettingsDefault}
           onOpenCalendar={() => setShowCalendar(true)}
           userEmail={userEmail}
           userSettings={userSettings}
         />
       </div>
 
-      <div className={`flex-1 flex flex-col h-screen relative ${!selectedPatientId ? 'hidden md:flex' : 'flex'}`}>
+      {showPatientDrawer && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-slate-900/50"
+            aria-label="Close patient list"
+            onClick={() => setPatientsDrawerOpen(false)}
+          />
+          <div
+            className="fixed inset-y-0 left-0 z-50 flex w-80 max-w-[85vw] shrink-0 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="halo-patients-drawer-title"
+          >
+            <span id="halo-patients-drawer-title" className="sr-only">
+              Patient list
+            </span>
+            <Sidebar
+              patients={patients}
+              selectedPatientId={selectedPatientId}
+              recentPatientIds={recentPatientIds}
+              onSelectPatient={selectPatientFromDrawer}
+              onCreatePatient={() => {
+                setPatientsDrawerOpen(false);
+                openCreateModal();
+              }}
+              onDeletePatient={(p) => {
+                handleDeleteRequest(p);
+                setPatientsDrawerOpen(false);
+              }}
+              onLogout={handleLogout}
+              onOpenSettings={() => {
+                setPatientsDrawerOpen(false);
+                openSettingsDefault();
+              }}
+              onOpenCalendar={() => {
+                setPatientsDrawerOpen(false);
+                setShowCalendar(true);
+              }}
+              userEmail={userEmail}
+              userSettings={userSettings}
+            />
+          </div>
+        </>
+      )}
+
+      <div className="relative flex min-h-0 min-h-[50vh] flex-1 flex-col overflow-hidden min-w-0 md:min-h-0">
         {activePatient ? (
           <PatientWorkspace
             patient={activePatient}
             onBack={() => selectPatient(null)}
+            onOpenPatientsList={() => setPatientsDrawerOpen(true)}
             onDataChange={refreshPatients}
             onToast={showToast}
             customTemplate={userSettings?.noteTemplate === 'custom' ? userSettings.customTemplateContent : undefined}
             userId={userId}
             notesApiAvailable={notesApiAvailable}
+            showScoringInBottomNav={userSettings?.showScoringInBottomNav !== false}
           />
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-300 relative overflow-hidden">
-            {/* Background logo — large watermark */}
+          <div
+            className={`relative flex flex-1 flex-col overflow-y-auto bg-white ${
+              isFirstHomeLanding ? 'min-h-dvh' : 'min-h-[60vh] lg:min-h-0'
+            }`}
+          >
             <img
-              src="/halo-logo.png"
-              alt=""
-              aria-hidden="true"
-              className="absolute opacity-[0.04] pointer-events-none select-none w-[70vw] max-w-[700px] min-w-[300px] md:w-[55vw] lg:w-[45vw]"
+                src="/halo-logo.png"
+                alt=""
+                aria-hidden="true"
+                className="pointer-events-none absolute left-1/2 top-[40%] w-[min(85vw,36rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 select-none opacity-[0.04]"
               draggable={false}
             />
-            {/* Foreground content */}
-            <div className="relative z-10 flex flex-col items-center text-center px-6">
+            <div
+              className={`relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-12 text-center ${
+                isFirstHomeLanding ? 'min-h-dvh' : ''
+              }`}
+            >
               <img
-                src="/halo-logo.png"
+                src="/halo-medical-logo.png"
                 alt="HALO Medical"
-                className="w-44 h-44 md:w-56 md:h-56 lg:w-64 lg:h-64 object-contain mb-6 opacity-20"
+                className="mx-auto mb-8 h-auto w-44 max-w-[min(100%,12rem)] select-none drop-shadow-sm md:w-52"
                 draggable={false}
               />
-              <p className="text-lg font-medium text-slate-400">Select a patient to begin</p>
+              {isPractitionerProfileComplete(userSettings) ? (
+                <>
+                  <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+                    Welcome
+                      {userSettings?.firstName?.trim()
+                        ? `, ${[userSettings.firstName.trim(), userSettings.lastName?.trim()].filter(Boolean).join(' ')}`
+                        : ''}
+                    </h1>
+                    {(userSettings?.profession?.trim() || userSettings?.department?.trim()) && (
+                      <p className="mt-2 text-sm font-medium text-slate-600">
+                        {[userSettings?.profession?.trim(), userSettings?.department?.trim()].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                    <p className="mx-auto mt-6 max-w-md text-sm leading-relaxed text-slate-500">
+                      {hasOpenedPatient
+                        ? 'Select a patient from the list to open their workspace and files.'
+                        : 'Open your patient panel to choose someone and jump into their workspace.'}
+                    </p>
+                    {(!hasOpenedPatient || !isLg) && (
+                      <button
+                        type="button"
+                        onClick={() => setPatientsDrawerOpen(true)}
+                        className="mt-8 inline-flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-teal-600/25 transition hover:bg-teal-500 active:scale-[0.98]"
+                      >
+                        <PanelLeft className="h-5 w-5 opacity-95" aria-hidden />
+                        Open patient panel
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+                      Welcome to HALO
+                    </h1>
+                    <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-500">
+                      Add your practitioner profile (name, profession, and department) so your workspace can greet you by name and tailor clinical tools.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={openPractitionerProfileSettings}
+                      className="mt-6 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 active:scale-[0.98]"
+                    >
+                      <User className="h-4 w-4 opacity-90" aria-hidden />
+                      Practitioner profile
+                    </button>
+                    {(!hasOpenedPatient || !isLg) && (
+                      <button
+                        type="button"
+                        onClick={() => setPatientsDrawerOpen(true)}
+                        className="mt-4 inline-flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-teal-600/25 transition hover:bg-teal-500 active:scale-[0.98]"
+                      >
+                        <Users className="h-5 w-5 opacity-95" aria-hidden />
+                        Open patient panel
+                      </button>
+                    )}
+                    <p className="mt-8 text-xs text-slate-400">
+                      {hasOpenedPatient
+                        ? 'Then choose a patient from the list to begin.'
+                        : 'Then open the patient panel to begin.'}
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
         )}
       </div>
 
@@ -316,13 +555,15 @@ export const App = () => {
       {/* SETTINGS MODAL */}
       <SettingsModal
         isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
+        onClose={closeSettings}
         settings={userSettings}
         onSave={handleSaveSettings}
         userEmail={userEmail}
         userId={userId}
         notesApiAvailable={notesApiAvailable}
         loginTime={loginTime}
+        initialTab={settingsInitialTab}
+        openProfileInEditMode={settingsOpenProfileEdit}
       />
 
       {/* CALENDAR MODAL */}

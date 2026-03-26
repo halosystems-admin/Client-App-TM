@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { DriveFile, BreadcrumbItem } from '../../../shared/types';
 import { AppStatus, FOLDER_MIME_TYPE } from '../../../shared/types';
 import {
   FileText, ChevronLeft, ChevronRight, Home, FolderOpen, FolderPlus,
   Pencil, Trash2, Eye, ExternalLink, CloudUpload,
-  FileSpreadsheet, FileImage, File,
+  FileSpreadsheet, FileImage, File, MoreHorizontal,
 } from 'lucide-react';
 import { getFriendlyFileType } from '../utils/formatting';
 
@@ -42,6 +42,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   onNavigateToFolder, onNavigateBack, onNavigateToBreadcrumb,
   onStartEditFile, onDeleteFile, onViewFile, onCreateFolder,
 }) => {
+  const [rowMenuId, setRowMenuId] = useState<string | null>(null);
   const isAtRoot = breadcrumbs.length <= 1;
   const folders = files.filter(isFolder);
   const regularFiles = files.filter(f => !isFolder(f));
@@ -53,11 +54,12 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
         <div className="flex items-center gap-1.5 flex-wrap">
           {!isAtRoot && (
             <button
+              type="button"
               onClick={onNavigateBack}
-              className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors mr-1"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-teal-50 hover:text-teal-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
               title="Go back"
             >
-              <ChevronLeft size={18} />
+              <ChevronLeft size={20} />
             </button>
           )}
           {breadcrumbs.map((crumb, index) => (
@@ -78,10 +80,11 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
           ))}
         </div>
         <button
+          type="button"
           onClick={onCreateFolder}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors"
+          className="flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200/90 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm ring-1 ring-black/[0.04] transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98]"
         >
-          <FolderPlus size={15} /> New Folder
+          <FolderPlus size={16} className="text-teal-600" strokeWidth={2} /> New Folder
         </button>
       </div>
 
@@ -116,26 +119,38 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                 {folders.map(folder => (
                   <div
                     key={folder.id}
-                    className="group flex items-center p-4 bg-white border border-slate-200 rounded-xl hover:shadow-md hover:border-teal-200 transition-all duration-200 cursor-pointer"
-                    onClick={() => onNavigateToFolder(folder)}
+                    className="group relative flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm ring-1 ring-black/[0.03] transition-all duration-200 hover:border-slate-300/90 hover:shadow-md sm:gap-3 sm:p-4"
                   >
-                    <div className="p-3 rounded-lg mr-4 bg-teal-100 text-teal-600">
-                      <FolderOpen className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-slate-800 group-hover:text-teal-700 transition-colors truncate">{folder.name}</h4>
-                      <p className="text-xs text-slate-500 mt-1">Folder &bull; {folder.createdTime}</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onStartEditFile(folder); }}
-                        className="p-2 text-slate-400 hover:text-teal-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                        title="Rename"
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <ChevronRight size={18} className="text-slate-300 group-hover:text-teal-500 transition-colors" />
-                    </div>
+                    <button
+                      type="button"
+                      className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center rounded-xl py-0.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                      onClick={() => {
+                        setRowMenuId(null);
+                        onNavigateToFolder(folder);
+                      }}
+                    >
+                      <div className="mr-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-100 text-teal-600 sm:mr-3">
+                        <FolderOpen className="h-5 w-5" strokeWidth={2} />
+                      </div>
+                      <div className="min-w-0 flex-1 pr-1">
+                        <h4 className="truncate font-semibold text-slate-800 transition-colors group-hover:text-teal-700">{folder.name}</h4>
+                        <p className="mt-1 text-xs text-slate-500">Folder &bull; {folder.createdTime}</p>
+                      </div>
+                      <ChevronRight size={20} className="ml-0.5 shrink-0 text-slate-300 transition-colors group-hover:text-teal-500" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRowMenuId(null);
+                        onStartEditFile(folder);
+                      }}
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-teal-700 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                      title="Rename folder"
+                      aria-label={`Rename ${folder.name}`}
+                    >
+                      <Pencil size={17} strokeWidth={2} />
+                    </button>
                   </div>
                 ))}
               </>
@@ -160,27 +175,132 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                     : isSpreadsheet ? FileSpreadsheet
                     : isPdf ? FileText
                     : File;
+                  const menuKey = `file-${file.id}`;
+                  const iconBtn =
+                    'flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50';
                   return (
-                    <div key={file.id} className="group flex items-center p-4 bg-white border border-slate-200 rounded-xl hover:shadow-md hover:border-teal-200 transition-all duration-200">
-                      <div className={`p-3 rounded-lg mr-4 ${iconClass}`}>
-                        <IconComponent className="w-5 h-5" />
+                    <div key={file.id} className="group relative flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm ring-1 ring-black/[0.03] transition-all duration-200 hover:border-slate-300/90 hover:shadow-md sm:gap-3 sm:p-4">
+                      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl sm:mr-1 ${iconClass}`}>
+                        <IconComponent className="h-5 w-5" strokeWidth={2} />
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-slate-800 group-hover:text-teal-700 transition-colors truncate">{file.name}</h4>
-                        <p className="text-xs text-slate-500 mt-1 truncate">{file.createdTime} &bull; {getFriendlyFileType(file.mimeType)}</p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => onStartEditFile(file)} className="p-2 text-slate-400 hover:text-teal-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Rename">
-                          <Pencil size={16} />
-                        </button>
-                        <button onClick={() => onDeleteFile(file)} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Delete">
-                          <Trash2 size={16} />
-                        </button>
-                        <button onClick={() => onViewFile(file)} className="hidden sm:flex items-center gap-1.5 text-sm bg-slate-50 text-slate-600 px-3 py-1.5 rounded-md font-medium hover:bg-teal-50 hover:text-teal-700 transition-colors" title="Preview">
-                          <Eye size={14} /> View
-                        </button>
-                        <a href={file.url} target="_blank" rel="noreferrer" className="p-2 text-slate-400 hover:text-teal-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Open in new tab">
-                          <ExternalLink size={16} />
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 cursor-pointer rounded-xl py-0.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                        onClick={() => onViewFile(file)}
+                      >
+                        <h4 className="truncate font-semibold text-slate-800 transition-colors group-hover:text-teal-700">{file.name}</h4>
+                        <p className="mt-1 truncate text-xs text-slate-500">{file.createdTime} &bull; {getFriendlyFileType(file.mimeType)}</p>
+                      </button>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <div className="hidden items-center gap-1 sm:flex">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onViewFile(file);
+                            }}
+                            className={iconBtn}
+                            title="Preview"
+                            aria-label={`Preview ${file.name}`}
+                          >
+                            <Eye size={17} strokeWidth={2} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onStartEditFile(file);
+                            }}
+                            className={iconBtn}
+                            title="Rename"
+                            aria-label={`Rename ${file.name}`}
+                          >
+                            <Pencil size={17} strokeWidth={2} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteFile(file);
+                            }}
+                            className={`${iconBtn} border-rose-100/90 text-rose-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700`}
+                            title="Delete"
+                            aria-label={`Delete ${file.name}`}
+                          >
+                            <Trash2 size={17} strokeWidth={2} />
+                          </button>
+                        </div>
+                        <div className="relative sm:hidden">
+                          <button
+                            type="button"
+                            onClick={() => setRowMenuId(rowMenuId === menuKey ? null : menuKey)}
+                            className={iconBtn}
+                            title="File actions"
+                            aria-expanded={rowMenuId === menuKey}
+                          >
+                            <MoreHorizontal size={18} strokeWidth={2} />
+                          </button>
+                          {rowMenuId === menuKey && (
+                            <>
+                              <button
+                                type="button"
+                                className="fixed inset-0 z-10 cursor-default"
+                                aria-label="Close menu"
+                                onClick={() => setRowMenuId(null)}
+                              />
+                              <div className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 py-1 shadow-xl shadow-slate-900/10 ring-1 ring-black/[0.04] backdrop-blur-md">
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                  onClick={() => {
+                                    setRowMenuId(null);
+                                    onViewFile(file);
+                                  }}
+                                >
+                                  <Eye size={16} /> Preview
+                                </button>
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                  onClick={() => {
+                                    setRowMenuId(null);
+                                    onStartEditFile(file);
+                                  }}
+                                >
+                                  <Pencil size={16} /> Rename
+                                </button>
+                                <a
+                                  href={file.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                  onClick={() => setRowMenuId(null)}
+                                >
+                                  <ExternalLink size={16} /> Open in Drive
+                                </a>
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-rose-600 hover:bg-rose-50"
+                                  onClick={() => {
+                                    setRowMenuId(null);
+                                    onDeleteFile(file);
+                                  }}
+                                >
+                                  <Trash2 size={16} /> Delete
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        <a
+                          href={file.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={`${iconBtn} hidden text-teal-700 hover:border-teal-200 hover:bg-teal-50 xl:flex`}
+                          title="Open in Google Drive"
+                          aria-label={`Open ${file.name} in Google Drive`}
+                        >
+                          <ExternalLink size={17} strokeWidth={2} />
                         </a>
                       </div>
                     </div>

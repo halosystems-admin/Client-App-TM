@@ -25,9 +25,10 @@ export const ScoringModule: React.FC<ScoringModuleProps> = ({ onToast }) => {
             <button
               type="button"
               onClick={() => setActiveId(null)}
-              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-slate-500 hover:text-teal-700 hover:border-teal-200 hover:bg-teal-50 transition-all active:scale-[0.97]"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-all hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 active:scale-[0.97]"
+              aria-label="Back to scoring list"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="h-5 w-5" />
             </button>
           )}
           <div>

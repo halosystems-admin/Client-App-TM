@@ -20,15 +20,30 @@ const app = express();
 // --- CRITICAL HEROKU FIX ---
 app.set('trust proxy', 1);
 
-// --- NEW: Database Session Setup ---
-const pgPool = new pg.Pool({
-  // Heroku automatically provides this variable when you attach the Postgres add-on
-  connectionString: process.env.DATABASE_URL,
-  // Heroku requires SSL for database connections in production
-  ssl: config.isProduction ? { rejectUnauthorized: false } : false 
-});
-
 const PostgresqlStore = connectPgSimple(session);
+
+function createSessionStore(): session.Store | undefined {
+  if (!config.isProduction) {
+    console.warn(
+      '[session] Development: in-memory sessions (no DATABASE_URL). Logins clear when the server restarts.'
+    );
+    return undefined;
+  }
+
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) {
+    console.error('DATABASE_URL is required in production for session persistence.');
+    process.exit(1);
+  }
+
+  return new PostgresqlStore({
+    pool: new pg.Pool({
+      connectionString: databaseUrl,
+      ssl: { rejectUnauthorized: false },
+    }),
+    createTableIfMissing: true,
+  });
+}
 
 // --- Global Rate Limiter ---
 const globalLimiter = rateLimit({
@@ -59,29 +74,32 @@ const authLimiter = rateLimit({
 
 // --- MIDDLEWARE ---
 app.use(globalLimiter);
-app.use(helmet());
+// Allow credentialed browser fetches from the SPA when it runs on another origin/port (e.g. Vite on :5173, API on :3000).
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
 app.use(cors({
   origin: config.clientUrl,
   credentials: true,
 }));
 app.use(express.json({ limit: '50mb' }));
 
-// --- NEW: Using Postgres for Sessions ---
-app.use(session({
-  store: new PostgresqlStore({
-    pool: pgPool,
-    createTableIfMissing: true, // Automatically creates the 'session' SQL table
-  }),
-  secret: config.sessionSecret || 'fallback-secret-key',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: config.isProduction, 
-    httpOnly: true,
-    sameSite: config.isProduction ? 'none' : 'lax',
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-  },
-}));
+app.use(
+  session({
+    store: createSessionStore(),
+    secret: config.sessionSecret || 'fallback-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: config.isProduction,
+      httpOnly: true,
+      sameSite: config.isProduction ? 'none' : 'lax',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    },
+  })
+);
 
 // --- ROUTES ---
 app.use('/api/auth', authLimiter, authRoutes);

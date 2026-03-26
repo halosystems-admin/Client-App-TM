@@ -20,7 +20,7 @@ import {
 import {
   Upload, Calendar, Clock, CheckCircle2, ChevronLeft, Loader2,
   CloudUpload, Pencil, X, Trash2, FolderOpen, MessageCircle,
-  FolderPlus, ChevronRight,
+  FolderPlus, ChevronRight, Users, ClipboardList, FileText,
 } from 'lucide-react';
 import { SmartSummary } from '../features/smart-summary/SmartSummary';
 import { LabAlerts } from '../features/lab-alerts/LabAlerts';
@@ -31,6 +31,7 @@ import { FileBrowser } from '../components/FileBrowser';
 import { NoteEditor } from '../components/NoteEditor';
 import { PatientChat } from '../components/PatientChat';
 import { getErrorMessage } from '../utils/formatting';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 
 const NOTES_API_BASE = import.meta.env.VITE_NOTES_API_URL ?? '';
 
@@ -39,24 +40,42 @@ const LAST_TEMPLATE_KEY = 'halo_lastTemplateId';
 interface Props {
   patient: Patient;
   onBack: () => void;
+  /** Opens patient list drawer on small screens (< md). */
+  onOpenPatientsList?: () => void;
   onDataChange: () => void;
   onToast: (message: string, type: 'success' | 'error' | 'info') => void;
   customTemplate?: string;
   userId?: string;
   notesApiAvailable?: boolean;
+  /** When false, Scoring is hidden from the compact bottom nav only (lg+ tabs unchanged). */
+  showScoringInBottomNav?: boolean;
 }
 
-export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChange, onToast, customTemplate, userId, notesApiAvailable }) => {
+export const PatientWorkspace: React.FC<Props> = ({
+  patient,
+  onBack,
+  onOpenPatientsList,
+  onDataChange,
+  onToast,
+  customTemplate,
+  userId,
+  notesApiAvailable,
+  showScoringInBottomNav = true,
+}) => {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [summary, setSummary] = useState<string[]>([]);
   const [alerts, setAlerts] = useState<LabAlert[]>([]);
   const [noteContent, setNoteContent] = useState("");
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
   const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'chat' | 'scoring'>('overview');
+  const [chatSheetOpen, setChatSheetOpen] = useState(false);
+  const isLg = useMediaQuery('(min-width: 1024px)');
   const [editMode, setEditMode] = useState<'write' | 'preview'>('write');
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showAiPanel, setShowAiPanel] = useState(true);
+  /** True until smart summary is resolved (cache or API), independent of folder list loading. */
+  const [summaryLoading, setSummaryLoading] = useState(true);
 
   // Folder navigation state
   const [currentFolderId, setCurrentFolderId] = useState<string>(patient.id);
@@ -161,6 +180,23 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
     }
   }, [currentFolderId, patient.id]);
 
+  useEffect(() => {
+    if (isLg) setChatSheetOpen(false);
+  }, [isLg]);
+
+  useEffect(() => {
+    if (!isLg && activeTab === 'chat') {
+      setChatSheetOpen(true);
+      setActiveTab('overview');
+    }
+  }, [isLg, activeTab]);
+
+  useEffect(() => {
+    if (!isLg && !showScoringInBottomNav && activeTab === 'scoring') {
+      setActiveTab('overview');
+    }
+  }, [isLg, showScoringInBottomNav, activeTab]);
+
   // Poll for external changes every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
@@ -184,6 +220,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
 
     const loadData = async () => {
       setStatus(AppStatus.LOADING);
+      setSummaryLoading(true);
       setSummary([]);
       setAlerts([]);
       setChatMessages([]);
@@ -200,6 +237,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
         setFiles(pFiles);
 
         if (pFiles.length === 0) {
+          if (isMounted) setSummaryLoading(false);
           setStatus(AppStatus.IDLE);
           return;
         }
@@ -210,15 +248,27 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
 
         if (cachedSummary) {
           // 1. We found it in memory! Load it instantly.
-          if (isMounted) setSummary(JSON.parse(cachedSummary));
+          if (isMounted) {
+            try {
+              setSummary(JSON.parse(cachedSummary));
+            } catch {
+              setSummary([]);
+            }
+            setSummaryLoading(false);
+          }
         } else {
           // 2. Not in memory. Ask Gemini to generate it, then save it!
-          generatePatientSummary(patient.name, pFiles, patient.id).then(res => {
-            if (isMounted) {
-              setSummary(res);
-              sessionStorage.setItem(summaryCacheKey, JSON.stringify(res));
-            }
-          }).catch(() => {});
+          generatePatientSummary(patient.name, pFiles, patient.id)
+            .then(res => {
+              if (isMounted) {
+                setSummary(res);
+                sessionStorage.setItem(summaryCacheKey, JSON.stringify(res));
+              }
+            })
+            .catch(() => {})
+            .finally(() => {
+              if (isMounted) setSummaryLoading(false);
+            });
         }
 
         // --- CACHING MAGIC FOR LAB ALERTS ---
@@ -703,6 +753,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       await deleteFile(fileToDelete.id);
       setFileToDelete(null);
       await loadFolderContents(currentFolderId);
+      onDataChange();
       onToast('File moved to trash.', 'success');
     } catch (err) {
       onToast(getErrorMessage(err), 'error');
@@ -711,151 +762,326 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
 
   const hasAiContent = alerts.length > 0 || summary.length > 0;
 
+  const closeChatSheet = () => setChatSheetOpen(false);
+
   return (
-    <div className="flex flex-col h-full bg-white relative w-full">
+    <div className="relative flex h-full min-h-0 w-full flex-col bg-white">
       {/* Header */}
-      <div className="border-b border-slate-200 px-4 md:px-8 py-4 flex flex-col md:flex-row md:justify-between md:items-start bg-white shadow-sm z-10 gap-4">
-        <div className="flex items-start gap-3">
-          <button onClick={onBack} className="md:hidden mt-1 p-2 -ml-2 text-slate-500 hover:text-teal-600 rounded-full">
-            <ChevronLeft className="w-6 h-6" />
-          </button>
-          <div className="group relative">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl md:text-3xl font-bold text-slate-800 tracking-tight leading-tight">{patient.name}</h1>
-              <button onClick={startEditPatient} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-teal-600 hover:bg-slate-100 rounded-full">
-                <Pencil size={16} />
+      <div className="z-10 flex shrink-0 flex-col gap-3 border-b border-slate-200/80 bg-white/95 px-4 py-3 shadow-[0_1px_0_rgba(0,0,0,0.04)] backdrop-blur-md md:px-8 md:py-4">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="flex min-w-0 flex-1 items-start gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white text-slate-600 shadow-sm ring-1 ring-black/[0.04] transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-teal-700 lg:hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+              aria-label="Back to patient list"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+            {onOpenPatientsList && (
+              <button
+                type="button"
+                onClick={onOpenPatientsList}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white text-slate-600 shadow-sm ring-1 ring-black/[0.04] transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-teal-700 lg:hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                title="Patients"
+                aria-label="Open patient list"
+              >
+                <Users className="h-5 w-5" />
               </button>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 mt-2 font-medium">
-              <span className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded text-slate-600 whitespace-nowrap"><Calendar className="w-3.5 h-3.5" /> {patient.dob}</span>
-              <span className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded text-slate-600 whitespace-nowrap">Sex: {patient.sex || 'Unknown'}</span>
-              <span className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded text-slate-600 whitespace-nowrap"><Clock className="w-3.5 h-3.5" /> Last: {patient.lastVisit}</span>
+            )}
+            <div className="group relative min-w-0 flex-1">
+              <div className="flex items-center gap-1 sm:gap-2">
+                <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-800 md:text-3xl">{patient.name}</h1>
+                <button
+                  type="button"
+                  onClick={startEditPatient}
+                  className="rounded-full p-2 text-slate-400 opacity-100 transition-opacity hover:bg-slate-100 hover:text-teal-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50 lg:opacity-0 lg:group-hover:opacity-100"
+                  title="Edit patient"
+                >
+                  <Pencil size={16} />
+                </button>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-slate-500">
+                <span className="flex items-center gap-1.5 whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-slate-600"><Calendar className="h-3.5 w-3.5" /> {patient.dob}</span>
+                <span className="flex items-center gap-1.5 whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-slate-600">Sex: {patient.sex || 'Unknown'}</span>
+                <span className="flex items-center gap-1.5 whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-slate-600"><Clock className="h-3.5 w-3.5" /> Last: {patient.lastVisit}</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="flex flex-col items-center md:items-end gap-2 w-full md:w-auto">
-          {status === AppStatus.UPLOADING ? (
-            <div className="w-48">
-              <div className="flex justify-between text-xs font-semibold text-teal-700 mb-1">
-                <span>Uploading...</span><span>{uploadProgress}%</span>
+          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end sm:pt-0.5">
+            {status === AppStatus.UPLOADING ? (
+              <div className="flex w-full min-w-[9rem] flex-col justify-center rounded-xl border border-slate-200/80 bg-slate-50/90 px-2.5 py-1.5 ring-1 ring-black/[0.04] sm:w-44">
+                <div className="mb-1 flex justify-between text-[10px] font-semibold text-teal-800">
+                  <span>Uploading…</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full rounded-full bg-teal-500 transition-[width] duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
               </div>
-              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                <div className="bg-teal-500 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={openUploadPicker}
+                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 self-end rounded-xl border border-slate-200/90 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm ring-1 ring-black/[0.04] transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                >
+                  <Upload className="h-3.5 w-3.5 text-teal-600" strokeWidth={2.25} aria-hidden />
+                  Upload
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+                />
+              </>
+            )}
+            {uploadMessage && status !== AppStatus.UPLOADING && (
+              <div className="flex max-w-full items-center gap-1.5 rounded-lg border border-teal-200/80 bg-teal-50/90 px-2.5 py-1.5 text-[11px] font-semibold text-teal-800 shadow-sm ring-1 ring-teal-100/50 sm:max-w-xs">
+                <CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden />
+                <span className="truncate">{uploadMessage}</span>
               </div>
-            </div>
-          ) : (
-            <>
-              <button
-                onClick={openUploadPicker}
-                className="w-full md:w-auto flex justify-center items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-5 py-2.5 rounded-lg cursor-pointer transition-all shadow-md shadow-teal-600/20 text-sm font-semibold"
-              >
-                <Upload className="w-4 h-4" /> Upload File
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                onChange={handleFileUpload}
-                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
-              />
-            </>
-          )}
-          {uploadMessage && status !== AppStatus.UPLOADING && (
-            <div className="w-full md:w-auto flex items-center gap-2 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-md">
-              <CheckCircle2 className="w-3.5 h-3.5" /> {uploadMessage}
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50/50">
-        <div className="max-w-6xl mx-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50/50">
+        <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col px-4 py-4 pb-bottom-nav md:px-8 md:py-8 lg:pb-8">
           {/* AI Panel */}
           {hasAiContent && showAiPanel && (
-            <div className="mb-6 space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="mb-4 shrink-0 space-y-4 sm:mb-6">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">AI Insights</span>
-                <button onClick={() => setShowAiPanel(false)} className="text-xs font-medium text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors px-2 py-1 rounded hover:bg-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAiPanel(false)}
+                  className="flex min-h-9 items-center gap-1 rounded px-2 py-1 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                >
                   <X size={12} /> Hide
                 </button>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <SmartSummary summary={summary} loading={status === AppStatus.LOADING} />
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <SmartSummary
+                  key={patient.id}
+                  summary={summary}
+                  loading={summaryLoading}
+                />
                 {alerts.length > 0 && <div><LabAlerts alerts={alerts} /></div>}
               </div>
             </div>
           )}
 
           {hasAiContent && !showAiPanel && (
-            <div className="mb-4">
-              <button onClick={() => setShowAiPanel(true)} className="text-xs font-medium text-teal-600 hover:text-teal-700 flex items-center gap-1.5 transition-colors px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 border border-teal-100">
+            <div className="mb-4 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowAiPanel(true)}
+                className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-black/[0.04] transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98]"
+              >
                 Show HALO AI Insights
               </button>
             </div>
           )}
 
-          {/* Tabs */}
-          <div className="flex gap-6 md:gap-8 border-b border-slate-200 mb-6 overflow-x-auto">
-            <button onClick={() => setActiveTab('overview')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap ${activeTab === 'overview' ? 'border-teal-600 text-teal-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Active Workspace</button>
-            <button onClick={() => setActiveTab('notes')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap ${activeTab === 'notes' ? 'border-teal-600 text-teal-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Editor &amp; Scribe</button>
-            <button onClick={() => setActiveTab('chat')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'chat' ? 'border-teal-600 text-teal-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+          {/* Desktop tabs (lg+) */}
+          <div className="mb-4 hidden shrink-0 gap-6 overflow-x-auto border-b border-slate-200 lg:mb-6 lg:flex md:gap-8">
+            <button type="button" onClick={() => { setChatSheetOpen(false); setActiveTab('overview'); }} className={`whitespace-nowrap border-b-2 pb-3 text-sm font-bold uppercase tracking-wide transition-colors ${activeTab === 'overview' ? 'border-teal-600 text-teal-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Active Workspace</button>
+            <button type="button" onClick={() => { setChatSheetOpen(false); setActiveTab('notes'); }} className={`whitespace-nowrap border-b-2 pb-3 text-sm font-bold uppercase tracking-wide transition-colors ${activeTab === 'notes' ? 'border-teal-600 text-teal-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Editor &amp; Scribe</button>
+            <button type="button" onClick={() => { setChatSheetOpen(false); setActiveTab('chat'); }} className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 pb-3 text-sm font-bold uppercase tracking-wide transition-colors ${activeTab === 'chat' ? 'border-teal-600 text-teal-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
               <MessageCircle size={14} /> Ask HALO?
             </button>
-            <button onClick={() => setActiveTab('scoring')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap ${activeTab === 'scoring' ? 'border-teal-600 text-teal-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Scoring</button>
+            <button type="button" onClick={() => { setChatSheetOpen(false); setActiveTab('scoring'); }} className={`whitespace-nowrap border-b-2 pb-3 text-sm font-bold uppercase tracking-wide transition-colors ${activeTab === 'scoring' ? 'border-teal-600 text-teal-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Scoring</button>
           </div>
 
-          {activeTab === 'overview' ? (
-            <FileBrowser
-              files={files}
-              status={status}
-              breadcrumbs={breadcrumbs}
-              onNavigateToFolder={navigateToFolder}
-              onNavigateBack={navigateBack}
-              onNavigateToBreadcrumb={navigateToBreadcrumb}
-              onStartEditFile={startEditFile}
-              onDeleteFile={setFileToDelete}
-              onViewFile={setViewingFile}
-              onCreateFolder={() => setShowCreateFolderModal(true)}
-            />
-          ) : activeTab === 'notes' ? (
-            <NoteEditor
-              noteContent={noteContent}
-              onNoteContentChange={setNoteContent}
-              editMode={editMode}
-              onEditModeChange={setEditMode}
-              status={status}
-              onSave={handleSaveNote}
-            />
-          ) : activeTab === 'chat' ? (
-            <PatientChat
-              patientName={patient.name}
-              chatMessages={chatMessages}
-              chatInput={chatInput}
-              onChatInputChange={setChatInput}
-              chatLoading={chatLoading}
-              chatLongWait={chatLongWait}
-              onSendChat={handleSendChat}
-            />
-          ) : (
-            <ScoringModule onToast={onToast} />
-          )}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {activeTab === 'overview' ? (
+              <div className="min-h-0 flex-1 overflow-y-auto pb-overview-scroll [-webkit-overflow-scrolling:touch]">
+                <FileBrowser
+                  files={files}
+                  status={status}
+                  breadcrumbs={breadcrumbs}
+                  onNavigateToFolder={navigateToFolder}
+                  onNavigateBack={navigateBack}
+                  onNavigateToBreadcrumb={navigateToBreadcrumb}
+                  onStartEditFile={startEditFile}
+                  onDeleteFile={setFileToDelete}
+                  onViewFile={setViewingFile}
+                  onCreateFolder={() => setShowCreateFolderModal(true)}
+                />
+              </div>
+            ) : activeTab === 'notes' ? (
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <NoteEditor
+                  noteContent={noteContent}
+                  onNoteContentChange={setNoteContent}
+                  editMode={editMode}
+                  onEditModeChange={setEditMode}
+                  status={status}
+                  onSave={handleSaveNote}
+                />
+              </div>
+            ) : activeTab === 'chat' && isLg ? (
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <PatientChat
+                  patientName={patient.name}
+                  chatMessages={chatMessages}
+                  chatInput={chatInput}
+                  onChatInputChange={setChatInput}
+                  chatLoading={chatLoading}
+                  chatLongWait={chatLongWait}
+                  onSendChat={handleSendChat}
+                />
+              </div>
+            ) : activeTab === 'scoring' ? (
+              <div className="min-h-0 min-w-0 flex-1 overflow-auto custom-scrollbar [-webkit-overflow-scrolling:touch]">
+                <ScoringModule onToast={onToast} />
+              </div>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto pb-overview-scroll [-webkit-overflow-scrolling:touch]">
+                <FileBrowser
+                  files={files}
+                  status={status}
+                  breadcrumbs={breadcrumbs}
+                  onNavigateToFolder={navigateToFolder}
+                  onNavigateBack={navigateBack}
+                  onNavigateToBreadcrumb={navigateToBreadcrumb}
+                  onStartEditFile={startEditFile}
+                  onDeleteFile={setFileToDelete}
+                  onViewFile={setViewingFile}
+                  onCreateFolder={() => setShowCreateFolderModal(true)}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <UniversalScribe
-        onTranscriptionComplete={handleScribeResult}
-        onError={(msg: string) => onToast(msg, 'error')}
-        customTemplate={customTemplate}
-        onRequestStartRecording={(start) => {
-          if (activeTemplate) {
-            start();
-          } else {
-            openTemplateModal('record', start);
-          }
-        }}
-      />
+      {/* Mobile / tablet: 3- or 4-tab nav + separate Record control (unchanged) */}
+      {!isLg && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 lg:hidden">
+          <div className="pointer-events-auto flex w-full max-w-lg items-stretch gap-2">
+            <nav className="min-w-0 flex-1" aria-label="Workspace sections">
+              <div className="flex h-full w-full items-stretch gap-0.5 rounded-[1.35rem] border border-slate-200/70 bg-slate-900/[0.07] p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.14),0_1px_0_rgba(255,255,255,0.75)_inset] ring-1 ring-black/[0.06] backdrop-blur-2xl supports-[backdrop-filter]:bg-slate-100/45">
+                <button
+                  type="button"
+                  onClick={() => { closeChatSheet(); setActiveTab('overview'); }}
+                  className={`flex min-h-[3.25rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-[1.05rem] px-1 py-1 text-[10px] font-semibold tracking-tight transition-all duration-200 sm:text-[11px] ${activeTab === 'overview' && !chatSheetOpen ? 'bg-slate-900 text-white shadow-md shadow-slate-900/25' : 'text-slate-600 hover:bg-white/55 hover:text-slate-900 active:scale-[0.97]'}`}
+                >
+                  <FolderOpen className={`h-[1.35rem] w-[1.35rem] shrink-0 sm:h-6 sm:w-6 ${activeTab === 'overview' && !chatSheetOpen ? 'opacity-100' : 'opacity-80'}`} strokeWidth={activeTab === 'overview' && !chatSheetOpen ? 2.25 : 2} aria-hidden />
+                  <span className="truncate">Workspace</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { closeChatSheet(); setActiveTab('notes'); }}
+                  className={`flex min-h-[3.25rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-[1.05rem] px-1 py-1 text-[10px] font-semibold tracking-tight transition-all duration-200 sm:text-[11px] ${activeTab === 'notes' && !chatSheetOpen ? 'bg-slate-900 text-white shadow-md shadow-slate-900/25' : 'text-slate-600 hover:bg-white/55 hover:text-slate-900 active:scale-[0.97]'}`}
+                >
+                  <FileText className={`h-[1.35rem] w-[1.35rem] shrink-0 sm:h-6 sm:w-6 ${activeTab === 'notes' && !chatSheetOpen ? 'opacity-100' : 'opacity-80'}`} strokeWidth={activeTab === 'notes' && !chatSheetOpen ? 2.25 : 2} aria-hidden />
+                  <span className="truncate">Notes</span>
+                </button>
+                {showScoringInBottomNav && (
+                  <button
+                    type="button"
+                    onClick={() => { closeChatSheet(); setActiveTab('scoring'); }}
+                    className={`flex min-h-[3.25rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-[1.05rem] px-1 py-1 text-[10px] font-semibold tracking-tight transition-all duration-200 sm:text-[11px] ${activeTab === 'scoring' && !chatSheetOpen ? 'bg-slate-900 text-white shadow-md shadow-slate-900/25' : 'text-slate-600 hover:bg-white/55 hover:text-slate-900 active:scale-[0.97]'}`}
+                  >
+                    <ClipboardList className={`h-[1.35rem] w-[1.35rem] shrink-0 sm:h-6 sm:w-6 ${activeTab === 'scoring' && !chatSheetOpen ? 'opacity-100' : 'opacity-80'}`} strokeWidth={activeTab === 'scoring' && !chatSheetOpen ? 2.25 : 2} aria-hidden />
+                    <span className="truncate">Scoring</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setChatSheetOpen(true)}
+                  className={`flex min-h-[3.25rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-[1.05rem] px-1 py-1 text-[10px] font-semibold tracking-tight transition-all duration-200 sm:text-[11px] ${chatSheetOpen ? 'bg-slate-900 text-white shadow-md shadow-slate-900/25' : 'text-slate-600 hover:bg-white/55 hover:text-slate-900 active:scale-[0.97]'}`}
+                >
+                  <MessageCircle className={`h-[1.35rem] w-[1.35rem] shrink-0 sm:h-6 sm:w-6 ${chatSheetOpen ? 'opacity-100' : 'opacity-80'}`} strokeWidth={chatSheetOpen ? 2.25 : 2} aria-hidden />
+                  <span className="truncate">Ask HALO</span>
+                </button>
+              </div>
+            </nav>
+            <UniversalScribe
+              variant="recordDock"
+              onTranscriptionComplete={handleScribeResult}
+              onError={(msg: string) => onToast(msg, 'error')}
+              customTemplate={customTemplate}
+              onRequestStartRecording={(start) => {
+                if (activeTemplate) {
+                  start();
+                } else {
+                  openTemplateModal('record', start);
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Ask HALO bottom sheet (compact screens) */}
+      {chatSheetOpen && !isLg && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-[45] bg-slate-900/40"
+            aria-label="Close Ask HALO"
+            onClick={closeChatSheet}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="halo-chat-sheet-title"
+            className="fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col rounded-t-2xl border border-slate-200 bg-white shadow-2xl"
+          >
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+              <h2 id="halo-chat-sheet-title" className="text-sm font-bold uppercase tracking-wide text-teal-800">Ask HALO</h2>
+              <button
+                type="button"
+                onClick={closeChatSheet}
+                className="flex h-11 w-11 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                aria-label="Close"
+              >
+                <X size={22} />
+              </button>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 pt-0">
+              <PatientChat
+                patientName={patient.name}
+                chatMessages={chatMessages}
+                chatInput={chatInput}
+                onChatInputChange={setChatInput}
+                chatLoading={chatLoading}
+                chatLongWait={chatLongWait}
+                onSendChat={handleSendChat}
+                hideHeader
+                className="h-full min-h-0 rounded-none border-0 shadow-none"
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {isLg && (
+        <UniversalScribe
+          variant="floating"
+          onTranscriptionComplete={handleScribeResult}
+          onError={(msg: string) => onToast(msg, 'error')}
+          customTemplate={customTemplate}
+          reserveBottomNav={false}
+          onRequestStartRecording={(start) => {
+            if (activeTemplate) {
+              start();
+            } else {
+              openTemplateModal('record', start);
+            }
+          }}
+        />
+      )}
 
       {/* EDIT PATIENT MODAL */}
       {editingPatient && (
