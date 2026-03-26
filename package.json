@@ -10,8 +10,9 @@
     "build": "cd client && npm install && npm run build && cd .. && tsc",
     "build:server": "tsc",
     "build:client": "cd client && npm run build",
-    "start": "node dist/server/index.js"
+    "start": "if [ \"$IS_FRONTEND\" = \"true\" ]; then cd client && npm start; else node dist/server/index.js; fi"
   },
+  
   "keywords": [],
   "author": "",
   "license": "ISC",
