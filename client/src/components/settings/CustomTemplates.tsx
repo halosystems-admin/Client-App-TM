@@ -140,11 +140,11 @@ export function CustomTemplates() {
         return (
           <div
             key={t.id}
-            className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm hover:border-slate-300 transition-colors"
+            className="border border-slate-200 rounded-xl p-3 sm:p-4 bg-white shadow-sm hover:border-slate-300 transition-colors"
           >
-            <p className="text-sm font-medium text-slate-800">{name}</p>
+            <p className="text-sm font-medium text-slate-800 break-words">{name}</p>
             {descStr ? (
-              <p className="text-xs text-slate-500 mt-1">{descStr}</p>
+              <p className="text-xs text-slate-500 mt-1 break-words">{descStr}</p>
             ) : (
               <p className="text-xs text-slate-400 mt-1">—</p>
             )}

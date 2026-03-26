@@ -147,14 +147,14 @@ export const CalculatorView: React.FC<Props> = ({ system }) => {
                         key={option.id}
                         type="button"
                         onClick={() => handleSelectOption(criterion.id, option.id)}
-                        className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-full border px-3 py-2 text-left text-xs font-semibold transition-all last:mr-0 sm:min-h-0 sm:shrink ${
+                        className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-full border px-3 py-2 text-left text-xs font-semibold transition-all last:mr-0 sm:min-h-11 sm:shrink ${
                           active
                             ? 'border-teal-600 bg-teal-600 text-white shadow-md shadow-teal-600/30'
                             : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
                         }`}
                       >
                         <span className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-70" />
-                        <span className="whitespace-nowrap">{option.label}</span>
+                        <span className="whitespace-normal break-words sm:whitespace-nowrap">{option.label}</span>
                       </button>
                     );
                   })}

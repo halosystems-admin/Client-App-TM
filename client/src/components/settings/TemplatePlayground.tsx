@@ -237,7 +237,7 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
                 setGeneratedContent(null);
                 setError(null);
               }}
-              className={`px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+              className={`min-h-11 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
                 selectedTemplate?.id === t.id
                   ? 'bg-teal-50 border-teal-300 text-teal-800'
                   : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
@@ -259,7 +259,7 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
               key={i}
               type="button"
               onClick={() => handleSelectScript(script.text)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
+              className={`min-h-11 px-3 py-2 rounded-md text-xs font-medium border transition-all ${
                 inputText === script.text
                   ? 'bg-teal-100 border-teal-300 text-teal-800'
                   : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
@@ -283,12 +283,12 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
       </div>
 
       {/* 3. Generate button */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
         <button
           type="button"
           onClick={handleGenerate}
           disabled={generateLoading || !selectedTemplate || !inputText.trim()}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+          className="inline-flex min-h-11 items-center justify-center gap-2 px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 disabled:pointer-events-none transition-colors"
         >
           {generateLoading ? (
             <Loader2 size={16} className="animate-spin" />
@@ -320,20 +320,20 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
       {/* View-Only Paper Modal (Option B) */}
       {showModal && generatedOutput && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-slate-200">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col border border-slate-200">
+            <div className="flex items-center justify-between px-3 sm:px-5 py-3 border-b border-slate-200">
               <span className="text-sm font-semibold text-slate-700">Generated Note</span>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+                className="inline-flex h-11 w-11 items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
                 aria-label="Close"
               >
                 <X size={18} />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-              <div className="bg-slate-50/80 border border-slate-200 rounded-lg p-6 space-y-4 font-sans text-slate-800">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+              <div className="bg-slate-50/80 border border-slate-200 rounded-lg p-4 sm:p-6 space-y-4 font-sans text-slate-800">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900 border-b border-slate-300 pb-1 mb-2">
                     {generatedOutput.title}
@@ -343,7 +343,7 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Clinical narrative</p>
-                  <p className="text-sm whitespace-pre-wrap">{generatedOutput.clinical_narrative}</p>
+                  <p className="text-sm whitespace-pre-wrap break-words">{generatedOutput.clinical_narrative}</p>
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Plan</p>
@@ -354,11 +354,11 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
                 </p>
               </div>
             </div>
-            <div className="px-5 py-3 border-t border-slate-200 flex justify-end">
+            <div className="px-3 sm:px-5 py-3 border-t border-slate-200 flex justify-end">
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-600 transition-colors"
+                className="min-h-11 px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-600 transition-colors"
               >
                 Close
               </button>

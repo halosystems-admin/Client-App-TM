@@ -48,7 +48,7 @@ const InputField = ({ label, value, onChange, placeholder, type = "text", inputM
       value={value} 
       onChange={onChange} 
       placeholder={placeholder} 
-      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all shadow-sm placeholder:text-slate-300" 
+      className="w-full min-h-11 px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all shadow-sm placeholder:text-slate-300" 
     />
   </div>
 );
@@ -270,30 +270,30 @@ export const SettingsModal: React.FC<Props> = ({
   const NavButton = ({ id, label, icon: Icon }: { id: TabType, label: string, icon: React.ElementType }) => (
     <button
       onClick={() => setActiveTab(id)}
-      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
+      className={`w-full flex min-h-11 items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition-all duration-200 ${
         activeTab === id 
           ? 'bg-teal-50 text-teal-700 font-semibold shadow-sm border border-teal-100/50' 
           : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800 font-medium'
       }`}
     >
-      <Icon size={16} className={activeTab === id ? 'text-teal-600' : 'text-slate-400'} /> 
-      {label}
+      <Icon size={16} className={`shrink-0 ${activeTab === id ? 'text-teal-600' : 'text-slate-400'}`} /> 
+      <span className="break-words">{label}</span>
     </button>
   );
 
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 font-sans">
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[600px] flex overflow-hidden animate-in fade-in zoom-in-95 border border-slate-200/60">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 backdrop-blur-sm p-0 sm:items-center sm:p-4 font-sans">
+      <div className="relative bg-white rounded-t-2xl sm:rounded-xl shadow-2xl w-full max-w-4xl h-[94dvh] sm:h-[600px] flex flex-col sm:flex-row overflow-hidden animate-in fade-in zoom-in-95 border border-slate-200/60">
         
         {/* SIDEBAR NAV */}
-        <div className="w-56 bg-slate-50/50 border-r border-slate-200/60 p-5 flex flex-col">
-          <div className="mb-6 px-1">
+        <div className="w-full sm:w-56 shrink-0 bg-slate-50/50 border-b sm:border-b-0 sm:border-r border-slate-200/60 p-3 sm:p-5 flex flex-col">
+          <div className="mb-3 sm:mb-6 px-1">
             <h2 className="text-lg font-bold text-slate-800 tracking-tight">System Config</h2>
             <p className="text-[10px] text-teal-600 font-semibold uppercase tracking-widest mt-0.5">Preferences</p>
           </div>
 
-          <nav className="space-y-1 flex-1">
+          <nav className="grid grid-cols-2 gap-2 sm:grid-cols-1 sm:space-y-1 sm:gap-0 flex-1">
             <NavButton id="profile" label="Practitioner Profile" icon={User} />
             <NavButton id="templates" label="Note Templates" icon={FileText} />
             <NavButton id="tools" label="Clinical Tools" icon={RefreshCw} />
@@ -301,7 +301,7 @@ export const SettingsModal: React.FC<Props> = ({
             <NavButton id="usage" label="Usage Metrics" icon={BarChart3} />
           </nav>
 
-          <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm flex items-center justify-between">
+          <div className="hidden sm:flex bg-white border border-slate-200 rounded-lg p-3 shadow-sm items-center justify-between">
             <div className="flex items-center gap-2">
               <Clock size={14} className="text-slate-400" />
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Session</span>
@@ -312,65 +312,65 @@ export const SettingsModal: React.FC<Props> = ({
 
         {/* CONTENT AREA */}
         <div className="flex-1 flex flex-col relative min-w-0 bg-white">
-          <button onClick={onClose} className="absolute top-5 right-5 p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-md transition-all z-10">
+          <button onClick={onClose} className="absolute top-3 right-3 sm:top-5 sm:right-5 inline-flex h-11 w-11 items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-lg transition-all z-10">
             <X size={18} />
           </button>
 
-          <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar">
             
             {/* PROFILE TAB */}
             {activeTab === 'profile' && (
               <div className="max-w-xl animate-in fade-in slide-in-from-right-4">
-                <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+                <div className="mb-6 border-b border-slate-100 pb-4">
                   <div>
                     <h3 className="text-xl font-semibold text-slate-800">Practitioner Profile</h3>
                     <p className="text-xs text-slate-500 mt-1">Manage your clinical identity and primary department.</p>
                   </div>
-                  <button onClick={() => setEditMode(!editMode)} className="text-teal-600 hover:bg-teal-50 border border-transparent hover:border-teal-100 px-3 py-1.5 rounded-md text-xs font-semibold transition-all">
+                  <button onClick={() => setEditMode(!editMode)} className="mt-3 inline-flex min-h-11 items-center text-teal-600 hover:bg-teal-50 border border-transparent hover:border-teal-100 px-3 py-1.5 rounded-md text-xs font-semibold transition-all">
                     {editMode ? 'Cancel' : 'Edit Details'}
                   </button>
                 </div>
                 
                 {editMode ? (
                   <div className="space-y-4">
-                    <div className="flex gap-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
                       <InputField label="First Name" value={form.firstName} onChange={(e: any) => setForm({...form, firstName: e.target.value})} placeholder="e.g. Jane" />
                       <InputField label="Last Name" value={form.lastName} onChange={(e: any) => setForm({...form, lastName: e.target.value})} placeholder="e.g. Doe" />
                     </div>
-                    <div className="flex gap-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
                       <InputField label="Profession" value={form.profession} onChange={(e: any) => setForm({...form, profession: e.target.value})} placeholder="e.g. Medical Student" />
                       <InputField label="Department" value={form.department} onChange={(e: any) => setForm({...form, department: e.target.value})} placeholder="e.g. Surgery" />
                     </div>
                     <InputField label="University / Institution" value={form.university} onChange={(e: any) => setForm({...form, university: e.target.value})} placeholder="e.g. University of the Witwatersrand" />
-                    <div className="flex gap-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
                       <InputField label="City" value={form.city} onChange={(e: any) => setForm({...form, city: e.target.value})} placeholder="e.g. Johannesburg" />
                       <InputField label="Postal Code" value={form.postalCode} onChange={(e: any) => setForm({...form, postalCode: e.target.value})} placeholder="e.g. 2000" />
                     </div>
                   </div>
                 ) : (
                   <div className="bg-slate-50/50 rounded-xl p-5 border border-slate-200/60 shadow-sm flex flex-col gap-5">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 sm:gap-4">
                       <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-teal-700 rounded-full flex items-center justify-center text-white text-xl font-bold shadow-sm ring-4 ring-teal-50">
                         {form.firstName?.[0] || ''}{form.lastName?.[0] || ''}
                       </div>
-                      <div>
-                        <h4 className="text-lg font-semibold text-slate-800">{form.firstName || 'New'} {form.lastName || 'Practitioner'}</h4>
-                        <p className="text-slate-500 text-sm">{form.profession || 'Profession not set'} • <span className="text-teal-700 font-medium">{form.department || 'Unassigned'}</span></p>
+                      <div className="min-w-0">
+                        <h4 className="text-lg font-semibold text-slate-800 break-words">{form.firstName || 'New'} {form.lastName || 'Practitioner'}</h4>
+                        <p className="text-slate-500 text-sm break-words">{form.profession || 'Profession not set'} • <span className="text-teal-700 font-medium">{form.department || 'Unassigned'}</span></p>
                       </div>
                     </div>
                     
                     {(form.university || form.city) && (
-                      <div className="pt-4 border-t border-slate-200/60 grid grid-cols-2 gap-4">
+                      <div className="pt-4 border-t border-slate-200/60 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         {form.university && (
                           <div className="flex items-center gap-2 text-slate-600">
                             <GraduationCap size={16} className="text-slate-400" />
-                            <span className="text-xs font-medium">{form.university}</span>
+                            <span className="text-xs font-medium break-words">{form.university}</span>
                           </div>
                         )}
                         {(form.city || form.postalCode) && (
                           <div className="flex items-center gap-2 text-slate-600">
                             <MapPin size={16} className="text-slate-400" />
-                            <span className="text-xs font-medium">{form.city}{form.city && form.postalCode ? ', ' : ''}{form.postalCode}</span>
+                            <span className="text-xs font-medium break-words">{form.city}{form.city && form.postalCode ? ', ' : ''}{form.postalCode}</span>
                           </div>
                         )}
                       </div>
@@ -396,19 +396,19 @@ export const SettingsModal: React.FC<Props> = ({
                   <p className="text-slate-500 text-xs mt-1">Set the default structure for AI-generated clinical notes.</p>
                 </div>
                 
-                <div className="bg-slate-100/80 p-1 rounded-lg w-fit mb-5 flex gap-1">
+                <div className="bg-slate-100/80 p-1 rounded-lg mb-5 inline-flex max-w-full flex-wrap gap-1">
                   {['soap', 'custom', 'practice'].map((t) => (
                     <button 
                       key={t}
                       onClick={() => setTemplateTab(t as TemplateTabType)}
-                      className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all uppercase tracking-wider ${templateTab === t ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      className={`min-h-11 px-4 py-2 rounded-md text-xs font-semibold transition-all uppercase tracking-wider ${templateTab === t ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
                       {t}
                     </button>
                   ))}
                 </div>
 
-                <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-xl p-5 shadow-sm overflow-y-auto">
+                <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm overflow-y-auto">
                   {templateTab === 'soap' && (
                     <div className="flex items-start gap-3">
                       <Check className="text-teal-500 mt-0.5" size={16} />
@@ -428,12 +428,12 @@ export const SettingsModal: React.FC<Props> = ({
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Your custom template</p>
                         {form.customTemplateContent ? (
                           <textarea 
-                            className="flex-1 w-full min-h-[120px] p-4 rounded-lg border border-slate-200 font-mono text-xs focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none resize-none bg-slate-50/50"
+                            className="flex-1 w-full min-h-[140px] p-4 rounded-lg border border-slate-200 font-mono text-xs focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none resize-none bg-slate-50/50"
                             value={form.customTemplateContent}
                             onChange={(e) => setForm({...form, customTemplateContent: e.target.value})}
                           />
                         ) : (
-                          <div onClick={() => fileInputRef.current?.click()} className="min-h-[120px] border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/30 transition-all">
+                          <div onClick={() => fileInputRef.current?.click()} className="min-h-[140px] border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/30 transition-all">
                             <Upload className="text-slate-400 mb-2" size={20} />
                             <p className="text-xs font-semibold text-slate-500">Click to upload .txt or .md template</p>
                           </div>
@@ -475,7 +475,7 @@ export const SettingsModal: React.FC<Props> = ({
                    <button 
                      onClick={handleRunScheduler}
                      disabled={schedulerRunning}
-                     className="w-full bg-slate-800 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors mt-2"
+                     className="w-full min-h-11 bg-slate-800 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors mt-2"
                    >
                      {schedulerRunning ? 'Processing Database...' : 'Run Sync Now'}
                    </button>
@@ -502,7 +502,7 @@ export const SettingsModal: React.FC<Props> = ({
                   </div>
 
                   <div className="space-y-3">
-                    <div className="flex gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row">
                       <InputField label="Weight (kg)" type="text" inputMode="decimal" value={bmiWeight} onChange={(e:any) => setBmiWeight(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 70" />
                       <InputField label="Height (cm)" type="text" inputMode="decimal" value={bmiHeight} onChange={(e:any) => setBmiHeight(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 175" />
                     </div>
@@ -541,7 +541,7 @@ export const SettingsModal: React.FC<Props> = ({
                       .sort(([a], [b]) => a.localeCompare(b))
                       .map(([category, systems]) => (
                         <details key={category} className="bg-white border border-slate-200 rounded-xl shadow-sm">
-                          <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer">
+                          <summary className="flex min-h-11 items-center justify-between px-3 py-2.5 cursor-pointer">
                             <span className="text-xs font-semibold text-slate-800">
                               {category}
                             </span>
@@ -558,12 +558,12 @@ export const SettingsModal: React.FC<Props> = ({
                                     key={system.id}
                                     type="button"
                                     onClick={() => setActiveScoringId(system.id)}
-                                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 border border-transparent hover:border-slate-200 transition-colors"
+                                    className="w-full flex min-h-11 items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 border border-transparent hover:border-slate-200 transition-colors"
                                   >
                                     <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${theme.bg} ${theme.text}`}>
                                       <Icon size={13} />
                                     </div>
-                                    <span className="truncate">
+                                    <span className="min-w-0 break-words text-left">
                                       <span className="font-semibold">{system.category}</span>
                                       <span className="mx-1.5 text-slate-400">·</span>
                                       <span>{system.title}</span>
@@ -582,7 +582,7 @@ export const SettingsModal: React.FC<Props> = ({
                   {/* Nephrology: eGFR */}
                   {showNephro && (
                     <details className="bg-white border border-slate-200 rounded-2xl shadow-sm">
-                      <summary className="flex items-center justify-between px-4 py-3 cursor-pointer">
+                      <summary className="flex min-h-11 items-center justify-between px-4 py-3 cursor-pointer">
                         <div className="flex items-center gap-2">
                           <div className="w-7 h-7 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
                             <Droplets size={14} />
@@ -593,11 +593,11 @@ export const SettingsModal: React.FC<Props> = ({
                         </div>
                       </summary>
                       <div className="px-4 pb-4 pt-1 space-y-3">
-                        <div className="flex gap-3">
+                        <div className="flex flex-col gap-3 sm:flex-row">
                           <InputField label="Age" type="text" inputMode="decimal" value={egfrAge} onChange={(e:any) => setEgfrAge(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="Yrs" />
                           <div className="space-y-1.5 flex-1">
                             <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Sex</label>
-                            <select value={egfrSex} onChange={(e) => setEgfrSex(e.target.value as 'M'|'F')} className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm">
+                            <select value={egfrSex} onChange={(e) => setEgfrSex(e.target.value as 'M'|'F')} className="w-full min-h-11 px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm">
                               <option value="M">Male</option>
                               <option value="F">Female</option>
                             </select>
@@ -625,7 +625,7 @@ export const SettingsModal: React.FC<Props> = ({
                   <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                     Mobile workspace
                   </p>
-                  <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
                     <div className="flex min-w-0 items-start gap-2">
                       <Smartphone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
                       <div className="min-w-0">
@@ -641,7 +641,7 @@ export const SettingsModal: React.FC<Props> = ({
                       )}
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        className="h-5 w-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                         checked={form.showScoringInBottomNav !== false}
                         disabled={savingBottomNavPref}
                         onChange={(e) =>
@@ -662,7 +662,7 @@ export const SettingsModal: React.FC<Props> = ({
                   <h3 className="text-xl font-semibold text-slate-800">System Usage</h3>
                   <p className="text-slate-500 text-xs mt-1">Analytics on your time saved and AI interactions.</p>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                    {[
                      { label: 'Notes Scribed', value: '42', color: 'bg-teal-50/50 border-teal-100 text-teal-800' },
                      { label: 'Est. Time Saved', value: '8.4 hrs', color: 'bg-blue-50/50 border-blue-100 text-blue-800' },
@@ -681,12 +681,12 @@ export const SettingsModal: React.FC<Props> = ({
 
           {/* SHARED FOOTER SAVE BAR */}
           {showSaveFooter && (
-            <div className="px-8 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3 rounded-br-xl animate-in slide-in-from-bottom-2">
-              <button onClick={() => setEditMode(false)} className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors">Discard</button>
+            <div className="px-4 sm:px-8 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3 rounded-br-xl animate-in slide-in-from-bottom-2">
+              <button onClick={() => setEditMode(false)} className="min-h-11 px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors">Discard</button>
               <button 
                 onClick={handleSave}
                 disabled={saving || (editMode && requiredFieldsMissing)}
-                className="bg-teal-600 hover:bg-teal-700 text-white px-6 py-2 rounded-lg text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 flex items-center"
+                className="min-h-11 bg-teal-600 hover:bg-teal-700 text-white px-6 py-2 rounded-lg text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center"
               >
                 {saving ? <Loader2 size={14} className="animate-spin mr-2" /> : <Save size={14} className="mr-2" />}
                 Save Configuration
@@ -710,7 +710,7 @@ export const SettingsModal: React.FC<Props> = ({
                   <button
                     type="button"
                     onClick={() => setActiveScoringId(null)}
-                    className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-2 py-1 text-slate-500 hover:text-teal-700 hover:border-teal-200 hover:bg-teal-50 transition-colors"
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-teal-700 hover:border-teal-200 hover:bg-teal-50 transition-colors"
                   >
                     <X size={14} />
                   </button>
