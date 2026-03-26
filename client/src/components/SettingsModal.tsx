@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { UserSettings } from '../../../shared/types';
 import {
-  X, Pencil, Save, User, Clock, Briefcase, MapPin, GraduationCap,
+  X, Save, User, Clock, Briefcase,
   FileText, Upload, Check, AlertCircle, RefreshCw, Loader2,
-  Settings as SettingsIcon, BarChart3, Plus, Droplets, Activity, Brain, Smartphone,
+  Settings as SettingsIcon, BarChart3, Droplets, Activity, Brain,
+  Smartphone,
+  ChevronRight,
 } from 'lucide-react';
 import { runSchedulerNow } from '../services/api';
 import { CustomTemplates } from './settings/CustomTemplates';
@@ -28,9 +30,7 @@ interface Props {
   userId?: string;
   notesApiAvailable?: boolean;
   loginTime: number;
-  /** When the modal opens, switch to this tab (e.g. profile from empty-state CTA). */
   initialTab?: SettingsModalTab;
-  /** If `initialTab` is `profile`, open directly in edit mode. */
   openProfileInEditMode?: boolean;
 }
 
@@ -38,42 +38,64 @@ export type SettingsModalTab = 'profile' | 'templates' | 'tools' | 'automations'
 type TabType = SettingsModalTab;
 type TemplateTabType = 'soap' | 'custom' | 'practice';
 
-// 1. Paste this ABOVE the export const SettingsModal line!
-const InputField = ({ label, value, onChange, placeholder, type = "text", inputMode }: any) => (
-  <div className="space-y-1.5 flex-1">
-    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{label}</label>
-    <input 
-      type={type} 
+/* ── Reusable sub-components ── */
+
+const InputField = ({ label, value, onChange, placeholder, type = 'text', inputMode }: any) => (
+  <div className="space-y-1">
+    <label className="block text-[13px] font-medium text-[#3c3c43]/60">{label}</label>
+    <input
+      type={type}
       inputMode={inputMode}
-      value={value} 
-      onChange={onChange} 
-      placeholder={placeholder} 
-      className="w-full min-h-11 px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all shadow-sm placeholder:text-slate-300" 
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      className="w-full min-h-[44px] px-4 py-2.5 text-[15px] rounded-xl bg-white text-[#1c1c1e] outline-none border border-[#d1d1d6] focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition-all placeholder:text-[#c7c7cc]"
     />
   </div>
 );
 
+const IOSToggle = ({ checked, onChange, disabled, label }: {
+  checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; label?: string;
+}) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    aria-label={label}
+    disabled={disabled}
+    onClick={() => onChange(!checked)}
+    className={`relative inline-flex h-[31px] w-[51px] shrink-0 cursor-pointer items-center rounded-full transition-colors duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+      checked ? 'bg-[#34c759]' : 'bg-[#e9e9eb]'
+    }`}
+  >
+    <span
+      className={`pointer-events-none inline-block h-[27px] w-[27px] rounded-full bg-white shadow-[0_3px_8px_rgba(0,0,0,0.15),0_1px_1px_rgba(0,0,0,0.06)] transition-transform duration-300 ease-in-out ${
+        checked ? 'translate-x-[22px]' : 'translate-x-[2px]'
+      }`}
+    />
+  </button>
+);
+
+const SectionLabel = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
+  <p className={`text-[13px] font-normal text-[#3c3c43]/60 uppercase tracking-wide px-4 mb-[6px] ${className}`}>
+    {children}
+  </p>
+);
+
 function getCategoryTheme(category: string): { icon: React.ElementType; bg: string; text: string } {
   const c = category.toLowerCase();
-  if (c.includes('cardio') || c.includes('pulmon')) {
-    // Cardiology / Pulmonology – pulse/heart vibe
+  if (c.includes('cardio') || c.includes('pulmon'))
     return { icon: Activity, bg: 'bg-rose-50', text: 'text-rose-600' };
-  }
-  if (c.includes('neuro') || c.includes('psych')) {
-    // Neurology / Psychiatry
+  if (c.includes('neuro') || c.includes('psych'))
     return { icon: Brain, bg: 'bg-purple-50', text: 'text-purple-600' };
-  }
-  if (c.includes('hepato') || c.includes('gastro') || c.includes('liver')) {
-    // Hepatology / Gastroenterology
+  if (c.includes('hepato') || c.includes('gastro') || c.includes('liver'))
     return { icon: Briefcase, bg: 'bg-amber-50', text: 'text-amber-600' };
-  }
-  if (c.includes('infect') || c.includes('critical') || c.includes('icu')) {
-    // Infectious Disease / Critical Care
+  if (c.includes('infect') || c.includes('critical') || c.includes('icu'))
     return { icon: AlertCircle, bg: 'bg-orange-50', text: 'text-orange-600' };
-  }
-  // Default neutral medical tool
   return { icon: Activity, bg: 'bg-slate-100', text: 'text-slate-600' };
 }
+
+/* ── Main component ── */
 
 export const SettingsModal: React.FC<Props> = ({
   isOpen,
@@ -93,19 +115,17 @@ export const SettingsModal: React.FC<Props> = ({
   const [saving, setSaving] = useState(false);
   const [elapsed, setElapsed] = useState('');
   const [templateTab, setTemplateTab] = useState<TemplateTabType>(
-    (settings?.noteTemplate === 'custom' ? 'custom' : 'soap')
+    (settings?.noteTemplate === 'custom' ? 'custom' : 'soap'),
   );
-  
+
   const [uploadError, setUploadError] = useState('');
   const [schedulerRunning, setSchedulerRunning] = useState(false);
   const [schedulerMessage, setSchedulerMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- BMI STATE ---
   const [bmiWeight, setBmiWeight] = useState<string>('');
   const [bmiHeight, setBmiHeight] = useState<string>('');
 
-  // --- SPECIALTY TOOLS STATE ---
   const [egfrAge, setEgfrAge] = useState<string>('');
   const [egfrSex, setEgfrSex] = useState<'M' | 'F'>('M');
   const [egfrCr, setEgfrCr] = useState<string>('');
@@ -113,24 +133,23 @@ export const SettingsModal: React.FC<Props> = ({
   const [wellsCriteria, setWellsCriteria] = useState({
     cancer: false, paralysis: false, bedridden: false, tenderness: false,
     swollenLeg: false, calfSwelling: false, pittingEdema: false,
-    collateralVeins: false, prevDVT: false, altDiagnosis: false
+    collateralVeins: false, prevDVT: false, altDiagnosis: false,
   });
 
   const [gcsEye, setGcsEye] = useState<number>(4);
   const [gcsVerbal, setGcsVerbal] = useState<number>(5);
   const [gcsMotor, setGcsMotor] = useState<number>(6);
 
-  // --- GLOBAL SCORING STATE ---
   const [activeScoringId, setActiveScoringId] = useState<string | null>(null);
   const [savingBottomNavPref, setSavingBottomNavPref] = useState(false);
 
-  // --- CALCULATIONS ---
+  /* ── Calculations ── */
   const calculateBMI = () => {
     const w = parseFloat(bmiWeight);
     const h = parseFloat(bmiHeight) / 100;
     if (w > 0 && h > 0) return (w / (h * h)).toFixed(1);
-    return null; 
-  }
+    return null;
+  };
   const bmiResult = calculateBMI();
 
   const egfrResult = (() => {
@@ -157,14 +176,13 @@ export const SettingsModal: React.FC<Props> = ({
   const activeScoringSystem: ScoringSystem | null =
     activeScoringId ? (scoringConfig.systems.find((s) => s.id === activeScoringId) ?? null) : null;
 
-  // --- CONDITIONAL RENDERING LOGIC ---
   const dept = (form.department || '').toLowerCase();
   const showNephro = dept.includes('nephrology');
   const showSurgery = dept.includes('surgery') || dept.includes('internal medicine') || dept.includes('im');
   const showEmergency = dept.includes('emergency') || dept.includes('general') || dept.includes('er');
   const showSuggested = !showNephro && !showSurgery && !showEmergency;
 
-  // --- CORE LOGIC FUNCTIONS ---
+  /* ── Handlers ── */
   const handleRunScheduler = async () => {
     setSchedulerMessage(null);
     setSchedulerRunning(true);
@@ -172,7 +190,7 @@ export const SettingsModal: React.FC<Props> = ({
       const res = await runSchedulerNow();
       setSchedulerMessage(res.message || 'Done.');
     } catch {
-      setSchedulerMessage('Request failed. Make sure you’re signed in.');
+      setSchedulerMessage('Request failed. Make sure you\u2019re signed in.');
     }
     setSchedulerRunning(false);
   };
@@ -180,9 +198,9 @@ export const SettingsModal: React.FC<Props> = ({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const updated: UserSettings = { 
-        ...form, 
-        noteTemplate: templateTab === 'custom' ? 'custom' : 'soap' 
+      const updated: UserSettings = {
+        ...form,
+        noteTemplate: templateTab === 'custom' ? 'custom' : 'soap',
       };
       await onSave(updated);
       setEditMode(false);
@@ -227,7 +245,7 @@ export const SettingsModal: React.FC<Props> = ({
     }
   };
 
-  // --- EFFECTS ---
+  /* ── Effects ── */
   useEffect(() => {
     if (settings) {
       setForm({ ...DEFAULT_SETTINGS, ...settings });
@@ -266,465 +284,535 @@ export const SettingsModal: React.FC<Props> = ({
   const hasUnsavedTemplateChanges = templateTab !== 'practice' && templateTab !== (settings?.noteTemplate || 'soap');
   const showSaveFooter = editMode || hasUnsavedTemplateChanges;
 
-  // --- UI COMPONENTS ---
-  const NavButton = ({ id, label, icon: Icon }: { id: TabType, label: string, icon: React.ElementType }) => (
-    <button
-      onClick={() => setActiveTab(id)}
-      className={`w-full flex min-h-11 items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition-all duration-200 ${
-        activeTab === id 
-          ? 'bg-teal-50 text-teal-700 font-semibold shadow-sm border border-teal-100/50' 
-          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800 font-medium'
-      }`}
-    >
-      <Icon size={16} className={`shrink-0 ${activeTab === id ? 'text-teal-600' : 'text-slate-400'}`} /> 
-      <span className="break-words">{label}</span>
-    </button>
-  );
+  const tabItems: { id: TabType; label: string; icon: React.ElementType }[] = [
+    { id: 'profile', label: 'Profile', icon: User },
+    { id: 'templates', label: 'Templates', icon: FileText },
+    { id: 'tools', label: 'Clinical Tools', icon: Activity },
+    { id: 'automations', label: 'Automations', icon: SettingsIcon },
+    { id: 'usage', label: 'Usage', icon: BarChart3 },
+  ];
 
+  const scoringByCategory = Object.entries(
+    scoringConfig.systems.reduce<Record<string, ScoringSystem[]>>((acc, system) => {
+      acc[system.category] = acc[system.category] || [];
+      acc[system.category].push(system);
+      return acc;
+    }, {}),
+  ).sort(([a], [b]) => a.localeCompare(b));
 
+  /* ── Render ── */
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 backdrop-blur-sm p-0 sm:items-center sm:p-4 font-sans">
-      <div className="relative bg-white rounded-t-2xl sm:rounded-xl shadow-2xl w-full max-w-4xl h-[94dvh] sm:h-[600px] flex flex-col sm:flex-row overflow-hidden animate-in fade-in zoom-in-95 border border-slate-200/60">
-        
-        {/* SIDEBAR NAV */}
-        <div className="w-full sm:w-56 shrink-0 bg-slate-50/50 border-b sm:border-b-0 sm:border-r border-slate-200/60 p-3 sm:p-5 flex flex-col">
-          <div className="mb-3 sm:mb-6 px-1">
-            <h2 className="text-lg font-bold text-slate-800 tracking-tight">System Config</h2>
-            <p className="text-[10px] text-teal-600 font-semibold uppercase tracking-widest mt-0.5">Preferences</p>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm font-sans">
+      <div className="relative bg-[#f2f2f7] w-full max-w-4xl h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-2xl shadow-2xl flex flex-col sm:flex-row overflow-hidden">
+
+        {/* ═══ DESKTOP SIDEBAR ═══ */}
+        <div className="hidden sm:flex w-56 shrink-0 bg-[#f2f2f7] border-r border-black/[0.06] p-5 flex-col">
+          <div className="mb-6 px-1">
+            <h2 className="text-[17px] font-bold text-[#1c1c1e] tracking-tight">Settings</h2>
+            <p className="text-[11px] text-[#8e8e93] font-semibold uppercase tracking-widest mt-0.5">Preferences</p>
           </div>
 
-          <nav className="grid grid-cols-2 gap-2 sm:grid-cols-1 sm:space-y-1 sm:gap-0 flex-1">
-            <NavButton id="profile" label="Practitioner Profile" icon={User} />
-            <NavButton id="templates" label="Note Templates" icon={FileText} />
-            <NavButton id="tools" label="Clinical Tools" icon={RefreshCw} />
-            <NavButton id="automations" label="Automations" icon={SettingsIcon} />
-            <NavButton id="usage" label="Usage Metrics" icon={BarChart3} />
+          <nav className="space-y-1 flex-1">
+            {tabItems.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className={`w-full flex min-h-[44px] items-center gap-3 px-3 py-2 rounded-xl text-left text-[15px] transition-all duration-200 ${
+                  activeTab === id
+                    ? 'bg-white text-teal-600 font-semibold shadow-sm'
+                    : 'text-[#3c3c43] hover:bg-white/60 font-medium'
+                }`}
+              >
+                <Icon size={18} className={activeTab === id ? 'text-teal-600' : 'text-[#8e8e93]'} />
+                <span>{label}</span>
+              </button>
+            ))}
           </nav>
 
-          <div className="hidden sm:flex bg-white border border-slate-200 rounded-lg p-3 shadow-sm items-center justify-between">
+          <div className="bg-white rounded-xl p-3 shadow-sm flex items-center justify-between mt-4">
             <div className="flex items-center gap-2">
-              <Clock size={14} className="text-slate-400" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Session</span>
+              <Clock size={14} className="text-[#8e8e93]" />
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#8e8e93]">Session</span>
             </div>
-            <p className="text-sm font-mono font-medium text-slate-700">{elapsed}</p>
+            <p className="text-[13px] font-mono font-semibold text-[#1c1c1e]">{elapsed}</p>
           </div>
         </div>
 
-        {/* CONTENT AREA */}
-        <div className="flex-1 flex flex-col relative min-w-0 bg-white">
-          <button onClick={onClose} className="absolute top-3 right-3 sm:top-5 sm:right-5 inline-flex h-11 w-11 items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-lg transition-all z-10">
-            <X size={18} />
+        {/* ═══ MOBILE HEADER (sticky) ═══ */}
+        <div className="sm:hidden bg-[#f2f2f7]/80 backdrop-blur-xl border-b border-black/[0.06] shrink-0 z-10">
+          <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
+            <h2 className="text-[17px] font-bold text-[#1c1c1e]">Settings</h2>
+            <button
+              onClick={onClose}
+              className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-[#e9e9eb] text-[#3c3c43] active:bg-[#d1d1d6] transition-colors"
+            >
+              <X size={14} strokeWidth={3} />
+            </button>
+          </div>
+          <div className="flex gap-1.5 px-3 pb-2.5 overflow-x-auto no-scrollbar [-webkit-overflow-scrolling:touch]">
+            {tabItems.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className={`shrink-0 flex items-center gap-1.5 min-h-[36px] px-3.5 py-1.5 rounded-full text-[13px] font-semibold transition-all duration-200 ${
+                  activeTab === id
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'bg-white/80 text-[#3c3c43] active:bg-white'
+                }`}
+              >
+                <Icon size={14} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ═══ CONTENT AREA ═══ */}
+        <div className="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden">
+          {/* Desktop close */}
+          <button
+            onClick={onClose}
+            className="hidden sm:inline-flex absolute top-4 right-4 h-[30px] w-[30px] items-center justify-center rounded-full bg-[#e9e9eb] text-[#3c3c43] hover:bg-[#d1d1d6] transition-colors z-10"
+          >
+            <X size={14} strokeWidth={3} />
           </button>
 
-          <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar">
-            
-            {/* PROFILE TAB */}
-            {activeTab === 'profile' && (
-              <div className="max-w-xl animate-in fade-in slide-in-from-right-4">
-                <div className="mb-6 border-b border-slate-100 pb-4">
-                  <div>
-                    <h3 className="text-xl font-semibold text-slate-800">Practitioner Profile</h3>
-                    <p className="text-xs text-slate-500 mt-1">Manage your clinical identity and primary department.</p>
-                  </div>
-                  <button onClick={() => setEditMode(!editMode)} className="mt-3 inline-flex min-h-11 items-center text-teal-600 hover:bg-teal-50 border border-transparent hover:border-teal-100 px-3 py-1.5 rounded-md text-xs font-semibold transition-all">
-                    {editMode ? 'Cancel' : 'Edit Details'}
-                  </button>
+          <div className="flex-1 min-h-0 overflow-y-auto [-webkit-overflow-scrolling:touch] custom-scrollbar overscroll-contain">
+            <div className="p-4 sm:p-6 pb-36 max-w-2xl mx-auto w-full">
+
+              {/* ════════ PROFILE TAB ════════ */}
+              {activeTab === 'profile' && (
+                <div className="animate-in fade-in slide-in-from-right-4">
+                  {!editMode ? (
+                    <>
+                      <SectionLabel className="mt-1">Practitioner Profile</SectionLabel>
+                      <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-black/[0.04]">
+                        <div className="flex items-center gap-3.5 px-4 py-4">
+                          <div className="w-[56px] h-[56px] bg-gradient-to-br from-teal-500 to-teal-700 rounded-full flex items-center justify-center text-white text-lg font-bold shadow-sm">
+                            {form.firstName?.[0] || ''}{form.lastName?.[0] || ''}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="text-[17px] font-semibold text-[#1c1c1e] truncate">
+                              {form.firstName || 'New'} {form.lastName || 'Practitioner'}
+                            </h3>
+                            <p className="text-[13px] text-[#8e8e93] truncate">
+                              {form.profession || 'Profession not set'}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => setEditMode(true)}
+                            className="text-teal-600 text-[15px] font-medium shrink-0 min-h-[44px] px-2"
+                          >
+                            Edit
+                          </button>
+                        </div>
+
+                        <div className="divide-y divide-[#c6c6c8]/30">
+                          <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5">
+                            <span className="text-[15px] text-[#1c1c1e]">Department</span>
+                            <span className="text-[15px] text-[#8e8e93] truncate ml-4 text-right">{form.department || 'Not set'}</span>
+                          </div>
+                          {form.university && (
+                            <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5">
+                              <span className="text-[15px] text-[#1c1c1e]">Institution</span>
+                              <span className="text-[15px] text-[#8e8e93] truncate ml-4 text-right">{form.university}</span>
+                            </div>
+                          )}
+                          {(form.city || form.postalCode) && (
+                            <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5">
+                              <span className="text-[15px] text-[#1c1c1e]">Location</span>
+                              <span className="text-[15px] text-[#8e8e93]">
+                                {form.city}{form.city && form.postalCode ? ', ' : ''}{form.postalCode}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {userId && (
+                        <>
+                          <SectionLabel className="mt-7">Account</SectionLabel>
+                          <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-black/[0.04]">
+                            <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5">
+                              <span className="text-[15px] text-[#1c1c1e]">Notes User ID</span>
+                              <span className="text-[13px] font-mono text-[#8e8e93]">{userId}</span>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <SectionLabel className="mt-1">Edit Profile</SectionLabel>
+                      <div className="bg-white rounded-2xl shadow-sm border border-black/[0.04] p-4 space-y-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <InputField label="First Name" value={form.firstName} onChange={(e: any) => setForm({ ...form, firstName: e.target.value })} placeholder="e.g. Jane" />
+                          <InputField label="Last Name" value={form.lastName} onChange={(e: any) => setForm({ ...form, lastName: e.target.value })} placeholder="e.g. Doe" />
+                        </div>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <InputField label="Profession" value={form.profession} onChange={(e: any) => setForm({ ...form, profession: e.target.value })} placeholder="e.g. Medical Student" />
+                          <InputField label="Department" value={form.department} onChange={(e: any) => setForm({ ...form, department: e.target.value })} placeholder="e.g. Surgery" />
+                        </div>
+                        <InputField label="University / Institution" value={form.university} onChange={(e: any) => setForm({ ...form, university: e.target.value })} placeholder="e.g. University of the Witwatersrand" />
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <InputField label="City" value={form.city} onChange={(e: any) => setForm({ ...form, city: e.target.value })} placeholder="e.g. Johannesburg" />
+                          <InputField label="Postal Code" value={form.postalCode} onChange={(e: any) => setForm({ ...form, postalCode: e.target.value })} placeholder="e.g. 2000" />
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
-                
-                {editMode ? (
-                  <div className="space-y-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
-                      <InputField label="First Name" value={form.firstName} onChange={(e: any) => setForm({...form, firstName: e.target.value})} placeholder="e.g. Jane" />
-                      <InputField label="Last Name" value={form.lastName} onChange={(e: any) => setForm({...form, lastName: e.target.value})} placeholder="e.g. Doe" />
-                    </div>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
-                      <InputField label="Profession" value={form.profession} onChange={(e: any) => setForm({...form, profession: e.target.value})} placeholder="e.g. Medical Student" />
-                      <InputField label="Department" value={form.department} onChange={(e: any) => setForm({...form, department: e.target.value})} placeholder="e.g. Surgery" />
-                    </div>
-                    <InputField label="University / Institution" value={form.university} onChange={(e: any) => setForm({...form, university: e.target.value})} placeholder="e.g. University of the Witwatersrand" />
-                    <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
-                      <InputField label="City" value={form.city} onChange={(e: any) => setForm({...form, city: e.target.value})} placeholder="e.g. Johannesburg" />
-                      <InputField label="Postal Code" value={form.postalCode} onChange={(e: any) => setForm({...form, postalCode: e.target.value})} placeholder="e.g. 2000" />
-                    </div>
+              )}
+
+              {/* ════════ TEMPLATES TAB ════════ */}
+              {activeTab === 'templates' && (
+                <div className="animate-in fade-in slide-in-from-right-4">
+                  <SectionLabel className="mt-1">Documentation Templates</SectionLabel>
+                  <p className="text-[13px] text-[#8e8e93] px-4 mb-4">
+                    Set the default structure for AI-generated clinical notes.
+                  </p>
+
+                  <div className="bg-white rounded-2xl shadow-sm border border-black/[0.04] p-1 mb-5 flex">
+                    {(['soap', 'custom', 'practice'] as TemplateTabType[]).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setTemplateTab(t)}
+                        className={`flex-1 min-h-[36px] rounded-xl text-[13px] font-semibold transition-all duration-200 uppercase tracking-wide ${
+                          templateTab === t
+                            ? 'bg-teal-600 text-white shadow-sm'
+                            : 'text-[#8e8e93] hover:text-[#3c3c43]'
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
                   </div>
-                ) : (
-                  <div className="bg-slate-50/50 rounded-xl p-5 border border-slate-200/60 shadow-sm flex flex-col gap-5">
-                    <div className="flex items-center gap-3 sm:gap-4">
-                      <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-teal-700 rounded-full flex items-center justify-center text-white text-xl font-bold shadow-sm ring-4 ring-teal-50">
-                        {form.firstName?.[0] || ''}{form.lastName?.[0] || ''}
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="text-lg font-semibold text-slate-800 break-words">{form.firstName || 'New'} {form.lastName || 'Practitioner'}</h4>
-                        <p className="text-slate-500 text-sm break-words">{form.profession || 'Profession not set'} • <span className="text-teal-700 font-medium">{form.department || 'Unassigned'}</span></p>
-                      </div>
-                    </div>
-                    
-                    {(form.university || form.city) && (
-                      <div className="pt-4 border-t border-slate-200/60 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                        {form.university && (
-                          <div className="flex items-center gap-2 text-slate-600">
-                            <GraduationCap size={16} className="text-slate-400" />
-                            <span className="text-xs font-medium break-words">{form.university}</span>
-                          </div>
-                        )}
-                        {(form.city || form.postalCode) && (
-                          <div className="flex items-center gap-2 text-slate-600">
-                            <MapPin size={16} className="text-slate-400" />
-                            <span className="text-xs font-medium break-words">{form.city}{form.city && form.postalCode ? ', ' : ''}{form.postalCode}</span>
-                          </div>
-                        )}
+
+                  <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-black/[0.04] p-4">
+                    {templateTab === 'soap' && (
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-full bg-[#34c759]/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <Check className="text-[#34c759]" size={16} />
+                        </div>
+                        <div>
+                          <p className="text-[15px] font-semibold text-[#1c1c1e]">Standard SOAP Format</p>
+                          <p className="text-[13px] text-[#8e8e93] mt-1 leading-relaxed">
+                            The default standard. Notes will be strictly structured into Subjective, Objective, Assessment, and Plan sections.
+                          </p>
+                        </div>
                       </div>
                     )}
 
-                    {userId && (
-                      <div className="mt-4 pt-3 border-t border-dashed border-slate-200 flex justify-end">
-                        <span className="text-[10px] font-mono text-slate-400">
-                          Notes user ID: {userId}
-                        </span>
+                    {templateTab === 'custom' && (
+                      <div className="space-y-5">
+                        <div>
+                          <p className="text-[13px] font-semibold text-[#8e8e93] uppercase tracking-wide mb-3">
+                            Templates from API (demo)
+                          </p>
+                          <CustomTemplates />
+                        </div>
+                        <div className="border-t border-[#c6c6c8]/30 pt-4">
+                          <p className="text-[13px] font-semibold text-[#8e8e93] uppercase tracking-wide mb-3">
+                            Your custom template
+                          </p>
+                          {form.customTemplateContent ? (
+                            <textarea
+                              className="w-full min-h-[140px] p-4 rounded-xl border border-[#d1d1d6] font-mono text-[13px] focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none resize-none bg-[#f2f2f7]"
+                              value={form.customTemplateContent}
+                              onChange={(e) => setForm({ ...form, customTemplateContent: e.target.value })}
+                            />
+                          ) : (
+                            <div
+                              onClick={() => fileInputRef.current?.click()}
+                              className="min-h-[140px] border-2 border-dashed border-[#d1d1d6] bg-[#f2f2f7] rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-teal-500 hover:bg-teal-50/50 transition-all"
+                            >
+                              <Upload className="text-[#8e8e93] mb-2" size={20} />
+                              <p className="text-[13px] font-medium text-[#8e8e93]">Tap to upload .txt or .md template</p>
+                            </div>
+                          )}
+                          <input ref={fileInputRef} type="file" className="hidden" onChange={handleTemplateUpload} />
+                          {uploadError && (
+                            <p className="text-[13px] text-[#ff3b30] mt-2">{uploadError}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {templateTab === 'practice' && (
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="text-[15px] font-semibold text-[#1c1c1e]">Template Playground</h4>
+                          <p className="text-[13px] text-[#8e8e93] mt-0.5">
+                            Select a template, choose or type clinical input, and generate a test note.
+                          </p>
+                        </div>
+                        <TemplatePlayground userId={userId || 'demo'} />
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* TEMPLATES TAB */}
-            {activeTab === 'templates' && (
-              <div className="animate-in fade-in slide-in-from-right-4 h-full flex flex-col">
-                <div className="mb-5">
-                  <h3 className="text-xl font-semibold text-slate-800">Documentation Templates</h3>
-                  <p className="text-slate-500 text-xs mt-1">Set the default structure for AI-generated clinical notes.</p>
                 </div>
-                
-                <div className="bg-slate-100/80 p-1 rounded-lg mb-5 inline-flex max-w-full flex-wrap gap-1">
-                  {['soap', 'custom', 'practice'].map((t) => (
-                    <button 
-                      key={t}
-                      onClick={() => setTemplateTab(t as TemplateTabType)}
-                      className={`min-h-11 px-4 py-2 rounded-md text-xs font-semibold transition-all uppercase tracking-wider ${templateTab === t ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
+              )}
 
-                <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm overflow-y-auto">
-                  {templateTab === 'soap' && (
-                    <div className="flex items-start gap-3">
-                      <Check className="text-teal-500 mt-0.5" size={16} />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800">Standard SOAP Format</p>
-                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">The default standard. Notes will be strictly structured into Subjective, Objective, Assessment, and Plan sections.</p>
+              {/* ════════ CLINICAL TOOLS TAB ════════ */}
+              {activeTab === 'tools' && (
+                <div className="animate-in fade-in slide-in-from-right-4">
+
+                  {/* BMI Calculator */}
+                  <SectionLabel className="mt-1">Quick Calculator</SectionLabel>
+                  <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-black/[0.04] p-4 mb-3">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-8 h-8 bg-teal-500/10 rounded-lg flex items-center justify-center">
+                        <BarChart3 size={16} className="text-teal-600" />
                       </div>
+                      <h4 className="text-[15px] font-semibold text-[#1c1c1e]">Body Mass Index</h4>
                     </div>
-                  )}
-                  {templateTab === 'custom' && (
-                    <div className="h-full flex flex-col gap-5">
-                      <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Templates from API (demo)</p>
-                        <CustomTemplates />
-                      </div>
-                      <div className="border-t border-slate-200 pt-4">
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Your custom template</p>
-                        {form.customTemplateContent ? (
-                          <textarea 
-                            className="flex-1 w-full min-h-[140px] p-4 rounded-lg border border-slate-200 font-mono text-xs focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none resize-none bg-slate-50/50"
-                            value={form.customTemplateContent}
-                            onChange={(e) => setForm({...form, customTemplateContent: e.target.value})}
-                          />
-                        ) : (
-                          <div onClick={() => fileInputRef.current?.click()} className="min-h-[140px] border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/30 transition-all">
-                            <Upload className="text-slate-400 mb-2" size={20} />
-                            <p className="text-xs font-semibold text-slate-500">Click to upload .txt or .md template</p>
-                          </div>
-                        )}
-                        <input ref={fileInputRef} type="file" className="hidden" onChange={handleTemplateUpload} />
-                      </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <InputField label="Weight (kg)" type="text" inputMode="decimal" value={bmiWeight} onChange={(e: any) => setBmiWeight(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="70" />
+                      <InputField label="Height (cm)" type="text" inputMode="decimal" value={bmiHeight} onChange={(e: any) => setBmiHeight(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="175" />
                     </div>
-                  )}
-                  {templateTab === 'practice' && (
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="text-sm font-semibold text-slate-800">Template Playground</h4>
-                        <p className="text-xs text-slate-500 mt-0.5">Select a template, choose or type clinical input, and generate a test note.</p>
-                      </div>
-                      <TemplatePlayground userId={userId || 'demo'} />
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* AUTOMATIONS TAB */}
-            {activeTab === 'automations' && (
-              <div className="animate-in fade-in slide-in-from-right-4 max-w-xl">
-                <div className="mb-6 border-b border-slate-100 pb-4">
-                  <h3 className="text-xl font-semibold text-slate-800">Background Automations</h3>
-                  <p className="text-slate-500 text-xs mt-1">Manage syncs and background processing tasks.</p>
-                </div>
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
-                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${schedulerRunning ? 'bg-teal-100 text-teal-600' : 'bg-slate-100 text-slate-500'}`}>
-                      <RefreshCw size={18} className={schedulerRunning ? 'animate-spin' : ''} />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-sm text-slate-800">File Conversion Scheduler</h4>
-                      <p className="text-xs text-slate-500">Syncs and processes external Drive documents.</p>
-                    </div>
-                   </div>
-                   <button 
-                     onClick={handleRunScheduler}
-                     disabled={schedulerRunning}
-                     className="w-full min-h-11 bg-slate-800 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors mt-2"
-                   >
-                     {schedulerRunning ? 'Processing Database...' : 'Run Sync Now'}
-                   </button>
-                   {schedulerMessage && <p className="text-center text-xs text-teal-600 font-medium">{schedulerMessage}</p>}
-                </div>
-              </div>
-            )}
-
-            {/* CLINICAL TOOLS TAB */}
-            {activeTab === 'tools' && (
-              <div className="animate-in fade-in slide-in-from-right-4 max-w-3xl">
-                <div className="mb-6 border-b border-slate-100 pb-4">
-                  <h3 className="text-xl font-semibold text-slate-800 tracking-tight">Clinical Calculators</h3>
-                  <p className="text-slate-500 text-xs mt-1">Dynamically configured for <span className="font-medium text-slate-700">{form.department || 'your profile'}</span>.</p>
-                </div>
-
-                {/* Standalone BMI calculator */}
-                <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm hover:border-teal-200 hover:shadow-md transition-all h-fit group mb-6">
-                  <div className="flex items-center gap-3 mb-5">
-                    <div className="w-8 h-8 bg-teal-50 text-teal-600 rounded-lg flex items-center justify-center group-hover:bg-teal-100 transition-colors">
-                      <BarChart3 size={16} />
-                    </div>
-                    <h4 className="font-semibold text-sm text-slate-800">Body Mass Index</h4>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <InputField label="Weight (kg)" type="text" inputMode="decimal" value={bmiWeight} onChange={(e:any) => setBmiWeight(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 70" />
-                      <InputField label="Height (cm)" type="text" inputMode="decimal" value={bmiHeight} onChange={(e:any) => setBmiHeight(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 175" />
-                    </div>
-
                     {bmiResult && (
-                      <div className="pt-4 mt-4 border-t border-slate-100 animate-in fade-in slide-in-from-top-1">
-                        <div className="flex justify-between items-end">
-                          <div>
-                            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Result</p>
-                            <p className="text-2xl font-bold text-slate-800 leading-none">{bmiResult}</p>
-                          </div>
-                          <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
-                            parseFloat(bmiResult) < 18.5 ? 'bg-blue-50 text-blue-600' : parseFloat(bmiResult) < 25 ? 'bg-teal-50 text-teal-700' : parseFloat(bmiResult) < 30 ? 'bg-orange-50 text-orange-700' : 'bg-rose-50 text-rose-700'
-                          }`}>
-                            {parseFloat(bmiResult) < 18.5 ? 'Underweight' : parseFloat(bmiResult) < 25 ? 'Healthy' : parseFloat(bmiResult) < 30 ? 'Overweight' : 'Obese'}
-                          </div>
+                      <div className="mt-4 pt-4 border-t border-[#c6c6c8]/30 flex items-end justify-between animate-in fade-in">
+                        <div>
+                          <p className="text-[11px] font-semibold text-[#8e8e93] uppercase tracking-wider mb-0.5">Result</p>
+                          <p className="text-[28px] font-bold text-[#1c1c1e] leading-none tracking-tight">{bmiResult}</p>
+                        </div>
+                        <div className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                          parseFloat(bmiResult) < 18.5 ? 'bg-teal-500/10 text-teal-600' :
+                          parseFloat(bmiResult) < 25 ? 'bg-[#34c759]/10 text-[#34c759]' :
+                          parseFloat(bmiResult) < 30 ? 'bg-[#ff9500]/10 text-[#ff9500]' :
+                          'bg-[#ff3b30]/10 text-[#ff3b30]'
+                        }`}>
+                          {parseFloat(bmiResult) < 18.5 ? 'Underweight' : parseFloat(bmiResult) < 25 ? 'Healthy' : parseFloat(bmiResult) < 30 ? 'Overweight' : 'Obese'}
                         </div>
                       </div>
                     )}
                   </div>
-                </div>
 
-                {/* Global scoring calculators */}
-                <div className="bg-slate-50/60 border border-slate-200 rounded-2xl p-4 mb-5">
-                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-3">
-                    Global Clinical Scoring Systems
+                  {/* Global Scoring Systems — all categories, no height cap */}
+                  <SectionLabel className="mt-7">Scoring Systems</SectionLabel>
+                  <p className="text-[13px] text-[#8e8e93] px-4 mb-3">
+                    Configured for <span className="font-medium text-[#1c1c1e]">{form.department || 'your profile'}</span>. Tap any tool to open.
                   </p>
-                  <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1 custom-scrollbar">
-                    {Object.entries(
-                      scoringConfig.systems.reduce<Record<string, ScoringSystem[]>>((acc, system) => {
-                        acc[system.category] = acc[system.category] || [];
-                        acc[system.category].push(system);
-                        return acc;
-                      }, {})
-                    )
-                      .sort(([a], [b]) => a.localeCompare(b))
-                      .map(([category, systems]) => (
-                        <details key={category} className="bg-white border border-slate-200 rounded-xl shadow-sm">
-                          <summary className="flex min-h-11 items-center justify-between px-3 py-2.5 cursor-pointer">
-                            <span className="text-xs font-semibold text-slate-800">
-                              {category}
-                            </span>
-                          </summary>
-                          <div className="px-3 pb-2 pt-1 space-y-1.5">
-                            {systems
-                              .slice()
-                              .sort((a, b) => a.title.localeCompare(b.title))
-                              .map((system) => {
-                                const theme = getCategoryTheme(system.category);
-                                const Icon = theme.icon;
-                                return (
-                                  <button
-                                    key={system.id}
-                                    type="button"
-                                    onClick={() => setActiveScoringId(system.id)}
-                                    className="w-full flex min-h-11 items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 border border-transparent hover:border-slate-200 transition-colors"
-                                  >
-                                    <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${theme.bg} ${theme.text}`}>
-                                      <Icon size={13} />
-                                    </div>
-                                    <span className="min-w-0 break-words text-left">
-                                      <span className="font-semibold">{system.category}</span>
-                                      <span className="mx-1.5 text-slate-400">·</span>
-                                      <span>{system.title}</span>
-                                    </span>
-                                  </button>
-                                );
-                              })}
+                  {scoringByCategory.map(([category, systems]) => {
+                    const theme = getCategoryTheme(category);
+                    const Icon = theme.icon;
+                    return (
+                      <div key={category} className="bg-white rounded-2xl shadow-sm overflow-hidden border border-black/[0.04] mb-3">
+                        <div className="flex items-center gap-3 px-4 min-h-[44px] py-2.5">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${theme.bg} ${theme.text}`}>
+                            <Icon size={14} />
                           </div>
-                        </details>
-                      ))}
-                  </div>
-                </div>
+                          <span className="text-[15px] font-semibold text-[#1c1c1e] flex-1">{category}</span>
+                          <span className="text-[13px] text-[#8e8e93]">{systems.length}</span>
+                        </div>
+                        <div className="divide-y divide-[#c6c6c8]/30">
+                          {systems
+                            .slice()
+                            .sort((a, b) => a.title.localeCompare(b.title))
+                            .map((system) => (
+                              <button
+                                key={system.id}
+                                type="button"
+                                onClick={() => setActiveScoringId(system.id)}
+                                className="w-full flex items-center gap-3 px-4 min-h-[44px] py-2.5 text-left hover:bg-[#f2f2f7]/50 active:bg-[#d1d1d6]/30 transition-colors"
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[15px] text-[#1c1c1e]">{system.title}</p>
+                                  <p className="text-[12px] text-[#8e8e93] mt-0.5 line-clamp-1">{system.description}</p>
+                                </div>
+                                <ChevronRight size={16} className="text-[#c7c7cc] shrink-0" />
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    );
+                  })}
 
-                {/* Accordion for legacy tools (eGFR) */}
-                <div className="space-y-3">
-                  {/* Nephrology: eGFR */}
+                  {/* Nephrology eGFR */}
                   {showNephro && (
-                    <details className="bg-white border border-slate-200 rounded-2xl shadow-sm">
-                      <summary className="flex min-h-11 items-center justify-between px-4 py-3 cursor-pointer">
-                        <div className="flex items-center gap-2">
+                    <>
+                      <SectionLabel className="mt-7">Specialty Tools</SectionLabel>
+                      <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-black/[0.04] p-4 mb-3">
+                        <div className="flex items-center gap-3 mb-4">
                           <div className="w-7 h-7 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
                             <Droplets size={14} />
                           </div>
-                          <span className="text-sm font-semibold text-slate-800">
-                            Nephrology · eGFR (MDRD)
-                          </span>
+                          <span className="text-[15px] font-semibold text-[#1c1c1e]">eGFR (MDRD)</span>
                         </div>
-                      </summary>
-                      <div className="px-4 pb-4 pt-1 space-y-3">
-                        <div className="flex flex-col gap-3 sm:flex-row">
-                          <InputField label="Age" type="text" inputMode="decimal" value={egfrAge} onChange={(e:any) => setEgfrAge(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="Yrs" />
-                          <div className="space-y-1.5 flex-1">
-                            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Sex</label>
-                            <select value={egfrSex} onChange={(e) => setEgfrSex(e.target.value as 'M'|'F')} className="w-full min-h-11 px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm">
-                              <option value="M">Male</option>
-                              <option value="F">Female</option>
-                            </select>
-                          </div>
-                        </div>
-                        <InputField label="Creatinine (mg/dL)" type="text" inputMode="decimal" value={egfrCr} onChange={(e:any) => setEgfrCr(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 1.2" />
-                        
-                        {egfrResult !== null && (
-                          <div className="pt-3 mt-2 border-t border-slate-100 flex justify-between items-end">
-                            <div>
-                              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">mL/min/1.73m²</p>
-                              <p className="text-2xl font-bold text-slate-800 leading-none">{egfrResult}</p>
-                            </div>
-                            <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${egfrResult > 60 ? 'bg-teal-50 text-teal-700' : 'bg-rose-50 text-rose-700'}`}>
-                              {egfrResult > 60 ? 'Normal' : 'Reduced'}
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <InputField label="Age" type="text" inputMode="decimal" value={egfrAge} onChange={(e: any) => setEgfrAge(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="Yrs" />
+                            <div className="space-y-1">
+                              <label className="block text-[13px] font-medium text-[#3c3c43]/60">Sex</label>
+                              <select
+                                value={egfrSex}
+                                onChange={(e) => setEgfrSex(e.target.value as 'M' | 'F')}
+                                className="w-full min-h-[44px] px-4 py-2.5 text-[15px] rounded-xl bg-white text-[#1c1c1e] outline-none border border-[#d1d1d6] focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+                              >
+                                <option value="M">Male</option>
+                                <option value="F">Female</option>
+                              </select>
                             </div>
                           </div>
-                        )}
-                      </div>
-                    </details>
-                  )}
-                </div>
+                          <InputField label="Creatinine (mg/dL)" type="text" inputMode="decimal" value={egfrCr} onChange={(e: any) => setEgfrCr(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 1.2" />
 
-                <div className="mt-5 border-t border-slate-200 pt-4">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                    Mobile workspace
-                  </p>
-                  <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-                    <div className="flex min-w-0 items-start gap-2">
-                      <Smartphone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-slate-800">Scoring tab in bottom bar</p>
-                        <p className="text-[10px] leading-snug text-slate-500">
-                          Small screens only. Recording button stays as is.
-                        </p>
+                          {egfrResult !== null && (
+                            <div className="pt-3 mt-2 border-t border-[#c6c6c8]/30 flex justify-between items-end">
+                              <div>
+                                <p className="text-[11px] font-semibold text-[#8e8e93] uppercase tracking-wider mb-0.5">mL/min/1.73m²</p>
+                                <p className="text-[28px] font-bold text-[#1c1c1e] leading-none tracking-tight">{egfrResult}</p>
+                              </div>
+                              <div className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                                egfrResult > 60 ? 'bg-[#34c759]/10 text-[#34c759]' : 'bg-[#ff3b30]/10 text-[#ff3b30]'
+                              }`}>
+                                {egfrResult > 60 ? 'Normal' : 'Reduced'}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Mobile workspace preference */}
+                  <SectionLabel className="mt-7">Preferences</SectionLabel>
+                  <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-black/[0.04]">
+                    <div className="flex items-center justify-between gap-3 px-4 min-h-[44px] py-3">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="w-7 h-7 bg-teal-500/10 rounded-lg flex items-center justify-center shrink-0">
+                          <Smartphone size={14} className="text-teal-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[15px] text-[#1c1c1e]">Scoring in bottom bar</p>
+                          <p className="text-[12px] text-[#8e8e93] leading-snug">Small screens only</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {savingBottomNavPref && (
+                          <Loader2 className="h-4 w-4 animate-spin text-teal-600" aria-hidden />
+                        )}
+                        <IOSToggle
+                          checked={form.showScoringInBottomNav !== false}
+                          disabled={savingBottomNavPref}
+                          onChange={(v) => void handleShowScoringInBottomNavChange(v)}
+                          label="Show scoring in mobile bottom navigation"
+                        />
                       </div>
                     </div>
-                    <span className="flex shrink-0 items-center gap-1.5">
-                      {savingBottomNavPref && (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-600" aria-hidden />
-                      )}
-                      <input
-                        type="checkbox"
-                        className="h-5 w-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                        checked={form.showScoringInBottomNav !== false}
-                        disabled={savingBottomNavPref}
-                        onChange={(e) =>
-                          void handleShowScoringInBottomNavChange(e.target.checked)
-                        }
-                        aria-label="Show scoring in mobile bottom navigation"
-                      />
-                    </span>
                   </div>
                 </div>
-              </div>
-            )}
-            
-            {/* USAGE TAB */}
-            {activeTab === 'usage' && (
-              <div className="animate-in fade-in slide-in-from-right-4">
-                <div className="mb-6 border-b border-slate-100 pb-4">
-                  <h3 className="text-xl font-semibold text-slate-800">System Usage</h3>
-                  <p className="text-slate-500 text-xs mt-1">Analytics on your time saved and AI interactions.</p>
+              )}
+
+              {/* ════════ AUTOMATIONS TAB ════════ */}
+              {activeTab === 'automations' && (
+                <div className="animate-in fade-in slide-in-from-right-4">
+                  <SectionLabel className="mt-1">Background Automations</SectionLabel>
+                  <p className="text-[13px] text-[#8e8e93] px-4 mb-4">
+                    Manage syncs and background processing tasks.
+                  </p>
+
+                  <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-black/[0.04] p-4">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                        schedulerRunning ? 'bg-teal-500/10' : 'bg-[#f2f2f7]'
+                      }`}>
+                        <RefreshCw size={16} className={schedulerRunning ? 'text-teal-600 animate-spin' : 'text-[#8e8e93]'} />
+                      </div>
+                      <div>
+                        <h4 className="text-[15px] font-semibold text-[#1c1c1e]">File Conversion Scheduler</h4>
+                        <p className="text-[12px] text-[#8e8e93]">Syncs and processes external Drive documents.</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleRunScheduler}
+                      disabled={schedulerRunning}
+                      className="w-full min-h-[44px] bg-teal-600 text-white py-2.5 rounded-xl text-[15px] font-semibold hover:bg-teal-700 active:bg-teal-800 disabled:opacity-50 transition-colors"
+                    >
+                      {schedulerRunning ? 'Processing...' : 'Run Sync Now'}
+                    </button>
+                    {schedulerMessage && (
+                      <p className="text-center text-[13px] text-[#34c759] font-medium mt-3">{schedulerMessage}</p>
+                    )}
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                   {[
-                     { label: 'Notes Scribed', value: '42', color: 'bg-teal-50/50 border-teal-100 text-teal-800' },
-                     { label: 'Est. Time Saved', value: '8.4 hrs', color: 'bg-blue-50/50 border-blue-100 text-blue-800' },
-                     { label: 'Summaries Processed', value: '128', color: 'bg-indigo-50/50 border-indigo-100 text-indigo-800' },
-                     { label: 'Active Automations', value: '3', color: 'bg-slate-50/50 border-slate-200 text-slate-800' }
-                   ].map(stat => (
-                     <div key={stat.label} className={`p-5 rounded-xl border shadow-sm flex flex-col justify-center ${stat.color}`}>
-                       <p className="text-[10px] font-semibold uppercase tracking-wider opacity-70 mb-1">{stat.label}</p>
-                       <p className="text-2xl font-bold leading-none">{stat.value}</p>
-                     </div>
-                   ))}
+              )}
+
+              {/* ════════ USAGE TAB ════════ */}
+              {activeTab === 'usage' && (
+                <div className="animate-in fade-in slide-in-from-right-4">
+                  <SectionLabel className="mt-1">System Usage</SectionLabel>
+                  <p className="text-[13px] text-[#8e8e93] px-4 mb-4">
+                    Analytics on your time saved and AI interactions.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: 'Notes Scribed', value: '42', accent: 'text-[#34c759]', bg: 'bg-[#34c759]/10' },
+                      { label: 'Est. Time Saved', value: '8.4 hrs', accent: 'text-teal-600', bg: 'bg-teal-500/10' },
+                      { label: 'Summaries', value: '128', accent: 'text-indigo-600', bg: 'bg-indigo-50' },
+                      { label: 'Automations', value: '3', accent: 'text-[#ff9500]', bg: 'bg-[#ff9500]/10' },
+                    ].map((stat) => (
+                      <div key={stat.label} className="bg-white rounded-2xl shadow-sm border border-black/[0.04] p-4 flex flex-col">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8e8e93] mb-2">{stat.label}</p>
+                        <p className={`text-[28px] font-bold leading-none tracking-tight ${stat.accent}`}>{stat.value}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+
+            </div>
           </div>
 
-          {/* SHARED FOOTER SAVE BAR */}
+          {/* ── SAVE FOOTER ── */}
           {showSaveFooter && (
-            <div className="px-4 sm:px-8 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3 rounded-br-xl animate-in slide-in-from-bottom-2">
-              <button onClick={() => setEditMode(false)} className="min-h-11 px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors">Discard</button>
-              <button 
+            <div className="px-4 sm:px-6 py-3 border-t border-black/[0.06] bg-[#f2f2f7]/80 backdrop-blur-xl flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3 shrink-0 animate-in slide-in-from-bottom-2">
+              <button
+                onClick={() => setEditMode(false)}
+                className="min-h-[44px] px-5 py-2 text-[15px] font-medium text-[#ff3b30] hover:bg-[#ff3b30]/10 rounded-xl transition-colors"
+              >
+                Discard
+              </button>
+              <button
                 onClick={handleSave}
                 disabled={saving || (editMode && requiredFieldsMissing)}
-                className="min-h-11 bg-teal-600 hover:bg-teal-700 text-white px-6 py-2 rounded-lg text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center"
+                className="min-h-[44px] bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white px-6 py-2 rounded-xl text-[15px] font-semibold shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {saving ? <Loader2 size={14} className="animate-spin mr-2" /> : <Save size={14} className="mr-2" />}
-                Save Configuration
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                Save
               </button>
             </div>
           )}
         </div>
 
-        {/* INLINE SCORING CALCULATOR OVERLAY */}
+        {/* ═══ SCORING CALCULATOR OVERLAY ═══ */}
         {activeScoringSystem && (
           <div
-            className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4"
+            className="absolute inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm"
             onClick={() => setActiveScoringId(null)}
           >
             <div
-              className="flex min-h-0 min-w-0 w-full max-w-xl max-h-[85vh] flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl"
+              className="w-full sm:max-w-xl h-[92dvh] sm:h-auto sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl bg-[#f2f2f7] shadow-2xl border border-black/[0.04]"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveScoringId(null)}
-                    className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-teal-700 hover:border-teal-200 hover:bg-teal-50 transition-colors"
-                  >
-                    <X size={14} />
-                  </button>
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      {activeScoringSystem.category}
-                    </span>
-                    <span className="text-sm font-semibold text-slate-900">
-                      {activeScoringSystem.title}
-                    </span>
-                  </div>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-black/[0.06] bg-[#f2f2f7]/80 backdrop-blur-xl rounded-t-3xl sm:rounded-t-2xl shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveScoringId(null)}
+                  className="text-teal-600 text-[15px] font-medium min-h-[44px] flex items-center"
+                >
+                  Done
+                </button>
+                <div className="flex flex-col items-center">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-[#8e8e93]">
+                    {activeScoringSystem.category}
+                  </span>
+                  <span className="text-[15px] font-semibold text-[#1c1c1e]">
+                    {activeScoringSystem.title}
+                  </span>
                 </div>
+                <div className="w-[44px]" />
               </div>
-              <div className="min-h-0 min-w-0 flex-1 overflow-auto p-4 custom-scrollbar [-webkit-overflow-scrolling:touch]">
+              <div className="flex-1 overflow-y-auto p-4 [-webkit-overflow-scrolling:touch] custom-scrollbar overscroll-contain">
                 <CalculatorView system={activeScoringSystem} />
               </div>
             </div>

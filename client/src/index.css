@@ -80,6 +80,14 @@
   border-radius: 9999px;
 }
 
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 html,
 body {
   height: 100%;

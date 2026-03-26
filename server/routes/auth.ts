@@ -20,7 +20,6 @@ router.get('/login-url', (req: Request, res: Response) => {
 
   const scopes = [
     'https://www.googleapis.com/auth/drive',
-    'https://www.googleapis.com/auth/calendar',
     'openid',
     'email',
     'profile',
@@ -39,7 +38,6 @@ router.get('/login-url', (req: Request, res: Response) => {
     `&response_type=code` +
     `&scope=${encodeURIComponent(scopes)}` +
     `&access_type=offline` +
-    `&prompt=consent` +
     `&state=${encodeURIComponent(state)}`;
 
   // Persist session before sending URL so callback can read oauthState
