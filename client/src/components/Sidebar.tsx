@@ -88,25 +88,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return (
       <div
         key={`${keyPrefix}-${patient.id}`}
-        className={`group relative flex items-center justify-between gap-1 p-2 rounded-xl cursor-pointer transition-all border border-transparent mb-1 ${
+        className={`group relative flex items-center justify-between gap-0.5 rounded-lg px-2 py-1.5 cursor-pointer transition-all border border-transparent mb-0.5 ${
           selectedPatientId === patient.id
-            ? 'bg-teal-600/10 border-teal-500/30 text-teal-400 shadow-sm'
+            ? 'bg-teal-600/10 border-teal-500/30 text-teal-400'
             : 'hover:bg-slate-800 hover:border-slate-700/50 hover:text-slate-100'
         }`}
       >
         <button
           type="button"
           onClick={() => onSelectPatient(patient.id)}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60"
         >
-          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
             selectedPatientId === patient.id ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-400 group-hover:bg-slate-700 group-hover:text-white'
           }`}>
             {patient.name.charAt(0)}
           </div>
           <div className="min-w-0">
-            <p className="truncate font-medium">{patient.name}</p>
-            <p className="truncate text-xs opacity-60">{patient.dob} • {patient.sex}</p>
+            <p className="truncate text-[13px] font-medium leading-snug">{patient.name}</p>
+            <p className="truncate text-[11px] leading-snug opacity-50">{patient.dob} · {patient.sex}</p>
           </div>
         </button>
         <div className="flex shrink-0 items-center gap-0.5">
@@ -117,12 +117,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 e.stopPropagation();
                 setRowMenuPatientId(menuOpen ? null : patient.id);
               }}
-              className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60"
               title="Patient actions"
               aria-expanded={menuOpen}
               aria-haspopup="true"
             >
-              <MoreHorizontal size={18} />
+              <MoreHorizontal size={15} />
             </button>
             {menuOpen && (
               <>
@@ -132,17 +132,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   aria-label="Close menu"
                   onClick={() => setRowMenuPatientId(null)}
                 />
-                <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-xl border border-slate-700 bg-slate-800 py-1 shadow-xl">
+                <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-lg border border-slate-700 bg-slate-800 py-0.5 shadow-xl">
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-rose-300 hover:bg-rose-500/10"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-rose-300 hover:bg-rose-500/10"
                     onClick={(e) => {
                       e.stopPropagation();
                       setRowMenuPatientId(null);
                       onDeletePatient(patient);
                     }}
                   >
-                    <Trash2 size={16} className="shrink-0" />
+                    <Trash2 size={14} className="shrink-0" />
                     Delete folder
                   </button>
                 </div>
@@ -150,7 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </div>
           <ChevronRight
-            size={18}
+            size={15}
             className={`hidden text-slate-500 sm:block ${
               selectedPatientId === patient.id ? 'opacity-100 text-teal-400' : 'opacity-0 transition-opacity group-hover:opacity-100 lg:opacity-0 lg:group-hover:opacity-100'
             }`}
@@ -163,42 +163,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <div className="w-80 md:w-72 lg:w-80 bg-slate-900 h-full min-h-0 flex flex-col text-slate-300 border-r border-slate-800 shadow-2xl">
-      <div className="p-6 pt-safe">
-        <div className="flex items-center justify-between mb-4 gap-2">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-teal-900/20">
+      <div className="px-4 pb-3 pt-4 pt-safe">
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg overflow-hidden shadow-sm shadow-teal-900/20">
               <img src="/halo-icon.png" alt="HALO" className="w-full h-full object-cover" draggable={false} />
             </div>
             <div>
-              <h1 className="font-bold text-white text-lg tracking-tight">HALO</h1>
-              <p className="text-xs text-teal-500 font-bold tracking-wider">PATIENT DRIVE</p>
+              <h1 className="font-bold text-white text-[15px] leading-tight tracking-tight">HALO</h1>
+              <p className="text-[10px] text-teal-500 font-bold tracking-wider">PATIENT DRIVE</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onOpenSettings}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-all hover:bg-slate-800 hover:text-teal-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition-all hover:bg-slate-800 hover:text-teal-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60"
             title="Settings & Profile"
           >
-            <Settings size={20} />
+            <Settings size={16} />
           </button>
         </div>
         <button
           onClick={onOpenCalendar}
-          className="w-full mb-4 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-slate-800 text-sm font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition-all border border-slate-700/60"
+          className="w-full mb-3 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-slate-800 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition-all border border-slate-700/60"
           title="Open Calendar"
         >
-          <Calendar size={18} className="text-teal-400 shrink-0" />
+          <Calendar size={14} className="text-teal-400 shrink-0" />
           <span>Calendar</span>
         </button>
         <div className="relative group">
-          <Search className="absolute left-3 top-3 text-slate-500 group-focus-within:text-teal-400 transition-colors" size={18} />
+          <Search className="absolute left-3 top-2 text-slate-500 group-focus-within:text-teal-400 transition-colors" size={15} />
           <input
             type="text"
             placeholder="Search name, DOB, or condition..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-800/50 focus:bg-slate-800 text-sm pl-10 pr-4 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-teal-500/50 border border-transparent focus:border-teal-500/30 transition-all placeholder:text-slate-600"
+            className="w-full bg-slate-800/50 focus:bg-slate-800 text-xs pl-9 pr-3 py-2 rounded-lg outline-none focus:ring-2 focus:ring-teal-500/50 border border-transparent focus:border-teal-500/30 transition-all placeholder:text-slate-600"
           />
         </div>
         {isAiSearching && searchTerm.length >= 3 && (
@@ -209,47 +209,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 custom-scrollbar">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 custom-scrollbar">
         {!searchTerm && patients.length > 0 && (
-          <div className="mb-6">
-            <div className="flex items-center gap-2 px-2 mb-2">
-              <Clock size={12} className="text-teal-500"/>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Recent Activity</h3>
+          <div className="mb-4">
+            <div className="flex items-center gap-1.5 px-2 mb-1.5">
+              <Clock size={10} className="text-teal-500"/>
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Recent</h3>
             </div>
             {recentPatients.map(p => renderPatientRow(p, 'recent'))}
-            <div className="my-4 border-t border-slate-800/50 mx-2"></div>
+            <div className="my-3 border-t border-slate-800/50 mx-2"></div>
           </div>
         )}
         <div>
-          <div className="flex items-center gap-2 px-2 mb-2">
-            <Users size={12} className={searchTerm ? "text-teal-500" : "text-slate-500"}/>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+          <div className="flex items-center gap-1.5 px-2 mb-1.5">
+            <Users size={10} className={searchTerm ? "text-teal-500" : "text-slate-500"}/>
+            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
               {searchTerm ? 'Search Results' : 'All Patients'}
               <span className="ml-1 opacity-60">({filteredPatients.length})</span>
             </h3>
           </div>
           {filteredPatients.length === 0 ? (
-            <div className="text-center py-8 opacity-40"><p className="text-sm">No patients found</p></div>
+            <div className="text-center py-6 opacity-40"><p className="text-xs">No patients found</p></div>
           ) : (
             filteredPatients.map(p => renderPatientRow(p, 'all'))
           )}
         </div>
       </div>
 
-      <div className="p-4 border-t border-slate-800 bg-slate-900/50 backdrop-blur-sm z-10 pb-safe">
+      <div className="p-3 border-t border-slate-800 bg-slate-900/50 backdrop-blur-sm z-10 pb-safe">
         <button
           type="button"
           onClick={onCreatePatient}
-          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-teal-600 p-3.5 font-bold text-white shadow-lg shadow-teal-900/20 transition-all hover:bg-teal-500 active:scale-[0.98]"
+          className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-teal-600 text-sm font-semibold text-white shadow-sm shadow-teal-900/20 transition-all hover:bg-teal-500 active:scale-[0.98]"
         >
-          <Plus size={20} /> New Patient Folder
+          <Plus size={16} /> New Patient Folder
         </button>
         <button
           type="button"
           onClick={onLogout}
-          className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 py-2 text-xs font-medium text-slate-500 transition-colors hover:text-slate-300"
+          className="mt-2 flex h-7 w-full items-center justify-center gap-1.5 rounded-lg bg-rose-600 text-[11px] font-semibold text-white transition-colors hover:bg-rose-700"
         >
-          <LogOut size={14} /> SIGN OUT
+          <LogOut size={12} /> SIGN OUT
         </button>
       </div>
     </div>

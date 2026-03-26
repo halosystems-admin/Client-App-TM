@@ -18,7 +18,7 @@ import {
   generateNote,
 } from '../services/api';
 import {
-  Upload, Calendar, Clock, CheckCircle2, ChevronLeft, Loader2,
+  Upload, CheckCircle2, ChevronLeft, Loader2,
   CloudUpload, Pencil, X, Trash2, FolderOpen, MessageCircle,
   FolderPlus, ChevronRight, Users, ClipboardList, FileText,
 } from 'lucide-react';
@@ -767,70 +767,65 @@ export const PatientWorkspace: React.FC<Props> = ({
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col bg-white">
       {/* Header */}
-      <div className="z-10 flex shrink-0 flex-col gap-3 border-b border-slate-200/80 bg-white/95 px-4 py-3 shadow-[0_1px_0_rgba(0,0,0,0.04)] backdrop-blur-md md:px-8 md:py-4">
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div className="flex min-w-0 flex-1 items-start gap-2 sm:gap-3">
+      <div className="z-10 shrink-0 border-b border-slate-200/50 bg-white/95 backdrop-blur-md">
+        <div className="flex items-center gap-2 px-3 py-2 md:px-8 md:py-3">
+          <button
+            type="button"
+            onClick={onBack}
+            className="-ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-teal-600 transition-colors hover:bg-teal-50 lg:hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40"
+            aria-label="Back to patient list"
+          >
+            <ChevronLeft className="h-5 w-5" strokeWidth={2.5} />
+          </button>
+          {onOpenPatientsList && (
             <button
               type="button"
-              onClick={onBack}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white text-slate-600 shadow-sm ring-1 ring-black/[0.04] transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-teal-700 lg:hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
-              aria-label="Back to patient list"
+              onClick={onOpenPatientsList}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-teal-600 lg:hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40"
+              title="Patients"
+              aria-label="Open patient list"
             >
-              <ChevronLeft className="h-6 w-6" />
+              <Users className="h-4 w-4" />
             </button>
-            {onOpenPatientsList && (
+          )}
+
+          <div className="group min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <h1 className="truncate text-[17px] font-semibold leading-snug text-slate-900 md:text-xl">{patient.name}</h1>
               <button
                 type="button"
-                onClick={onOpenPatientsList}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white text-slate-600 shadow-sm ring-1 ring-black/[0.04] transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-teal-700 lg:hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
-                title="Patients"
-                aria-label="Open patient list"
+                onClick={startEditPatient}
+                className="shrink-0 rounded-full p-1 text-slate-300 transition-all hover:bg-slate-100 hover:text-teal-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 lg:opacity-0 lg:group-hover:opacity-100"
+                title="Edit patient"
               >
-                <Users className="h-5 w-5" />
+                <Pencil size={13} />
               </button>
-            )}
-            <div className="group relative min-w-0 flex-1">
-              <div className="flex items-center gap-1 sm:gap-2">
-                <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-800 md:text-3xl">{patient.name}</h1>
-                <button
-                  type="button"
-                  onClick={startEditPatient}
-                  className="rounded-full p-2 text-slate-400 opacity-100 transition-opacity hover:bg-slate-100 hover:text-teal-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50 lg:opacity-0 lg:group-hover:opacity-100"
-                  title="Edit patient"
-                >
-                  <Pencil size={16} />
-                </button>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-slate-500">
-                <span className="flex items-center gap-1.5 whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-slate-600"><Calendar className="h-3.5 w-3.5" /> {patient.dob}</span>
-                <span className="flex items-center gap-1.5 whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-slate-600">Sex: {patient.sex || 'Unknown'}</span>
-                <span className="flex items-center gap-1.5 whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-slate-600"><Clock className="h-3.5 w-3.5" /> Last: {patient.lastVisit}</span>
-              </div>
             </div>
+            <p className="mt-0.5 truncate text-[11px] leading-snug text-slate-400 md:text-xs">
+              {patient.dob}<span className="mx-1 text-slate-300">·</span>{patient.sex || '—'}<span className="mx-1 text-slate-300">·</span>Last {patient.lastVisit}
+            </p>
           </div>
 
-          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end sm:pt-0.5">
+          <div className="flex shrink-0 items-center gap-1.5">
             {status === AppStatus.UPLOADING ? (
-              <div className="flex w-full min-w-[9rem] flex-col justify-center rounded-xl border border-slate-200/80 bg-slate-50/90 px-2.5 py-1.5 ring-1 ring-black/[0.04] sm:w-44">
-                <div className="mb-1 flex justify-between text-[10px] font-semibold text-teal-800">
-                  <span>Uploading…</span>
-                  <span>{uploadProgress}%</span>
-                </div>
-                <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200">
+              <div className="flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1.5 ring-1 ring-slate-900/[0.04]">
+                <div className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-200">
                   <div
                     className="h-full rounded-full bg-teal-500 transition-[width] duration-300"
                     style={{ width: `${uploadProgress}%` }}
                   />
                 </div>
+                <span className="text-[10px] font-semibold tabular-nums text-teal-700">{uploadProgress}%</span>
               </div>
             ) : (
               <>
                 <button
                   type="button"
                   onClick={openUploadPicker}
-                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 self-end rounded-xl border border-slate-200/90 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm ring-1 ring-black/[0.04] transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                  className="flex h-8 items-center gap-1.5 rounded-full bg-slate-900/[0.04] px-3 text-xs font-medium text-slate-600 transition-all hover:bg-teal-50 hover:text-teal-700 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40"
+                  title="Upload file"
                 >
-                  <Upload className="h-3.5 w-3.5 text-teal-600" strokeWidth={2.25} aria-hidden />
+                  <Upload className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
                   Upload
                 </button>
                 <input
@@ -842,14 +837,14 @@ export const PatientWorkspace: React.FC<Props> = ({
                 />
               </>
             )}
-            {uploadMessage && status !== AppStatus.UPLOADING && (
-              <div className="flex max-w-full items-center gap-1.5 rounded-lg border border-teal-200/80 bg-teal-50/90 px-2.5 py-1.5 text-[11px] font-semibold text-teal-800 shadow-sm ring-1 ring-teal-100/50 sm:max-w-xs">
-                <CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden />
-                <span className="truncate">{uploadMessage}</span>
-              </div>
-            )}
           </div>
         </div>
+        {uploadMessage && status !== AppStatus.UPLOADING && (
+          <div className="flex items-center gap-1.5 border-t border-teal-100/50 bg-teal-50/40 px-4 py-1 md:px-8">
+            <CheckCircle2 className="h-3 w-3 shrink-0 text-teal-600" aria-hidden />
+            <span className="truncate text-[11px] font-medium text-teal-700">{uploadMessage}</span>
+          </div>
+        )}
       </div>
 
       {/* Content */}
@@ -880,11 +875,11 @@ export const PatientWorkspace: React.FC<Props> = ({
           )}
 
           {hasAiContent && !showAiPanel && (
-            <div className="mb-4 shrink-0">
+            <div className="mb-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowAiPanel(true)}
-                className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-black/[0.04] transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98]"
+                className="flex h-8 items-center gap-1.5 rounded-full bg-slate-900/[0.04] px-3 text-xs font-medium text-slate-600 transition-all hover:bg-teal-50 hover:text-teal-700 active:scale-[0.97]"
               >
                 Show HALO AI Insights
               </button>

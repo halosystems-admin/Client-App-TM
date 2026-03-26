@@ -71,6 +71,8 @@ export const App = () => {
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [patientToDelete, setPatientToDelete] = useState<Patient | null>(null);
@@ -184,19 +186,29 @@ export const App = () => {
           } else if (storedId && !loadedPatients.find(p => p.id === storedId)) {
             selectPatient(null);
           }
-          // Load settings in background
-          loadSettings().then(res => {
+          // Load settings before rendering signed-in UI to avoid profile flicker
+          setSettingsLoading(true);
+          try {
+            const res = await loadSettings();
             if (res.settings) setUserSettings(res.settings);
-          }).catch(() => {});
+          } catch {
+            // ignore: app can still render, but we want to stop the loading gate
+          } finally {
+            setSettingsLoaded(true);
+            setSettingsLoading(false);
+          }
           // Check for pending scheduler jobs and prompt user if any are due
           getSchedulerStatus().then(status => {
             if (status.totalPending > 0) {
               setSchedulerPrompt({ pending: status.totalPending, due: status.totalDue });
             }
           }).catch(() => {});
+        } else {
+          setSettingsLoaded(true);
         }
       } catch {
         console.error('Session check failed');
+        setSettingsLoaded(true);
       }
       setIsReady(true);
     };
@@ -353,6 +365,41 @@ export const App = () => {
             </button>
 
             <p className="mt-8 text-xs text-slate-400">Secure Environment &bull; POPIA Compliant</p>
+          </div>
+        </div>
+        {toast && (
+          <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        )}
+      </>
+    );
+  }
+
+  // Signed-in boot gate: mask initial profile/settings fetch to prevent flicker/layout shift.
+  if (!settingsLoaded) {
+    return (
+      <>
+        <style>{`
+          @keyframes haloIndeterminate {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(250%); }
+          }
+        `}</style>
+        <div className="relative flex min-h-dvh w-full flex-1 items-center justify-center bg-slate-50">
+          <div className="absolute inset-x-0 top-0 z-50 h-0.5 overflow-hidden bg-slate-200">
+            <div
+              className="h-full w-1/3 bg-teal-600"
+              style={{ animation: 'haloIndeterminate 1.05s ease-in-out infinite' }}
+            />
+          </div>
+
+          <div className="flex flex-col items-center gap-4">
+            <div className="h-10 w-10 rounded-full border-2 border-slate-200 border-t-teal-600 animate-spin" />
+            <div className="text-center">
+              <p className="text-sm font-semibold text-slate-700">Preparing your workspace…</p>
+              <p className="mt-1 text-xs text-slate-400">
+                {settingsLoading ? 'Loading your profile' : 'Just a moment'}
+              </p>
+            </div>
           </div>
         </div>
         {toast && (

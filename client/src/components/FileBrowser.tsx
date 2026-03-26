@@ -24,13 +24,13 @@ interface FileBrowserProps {
 const isFolder = (file: DriveFile): boolean => file.mimeType === FOLDER_MIME_TYPE;
 
 const FileSkeleton: React.FC = () => (
-  <div className="space-y-3">
+  <div className="space-y-2.5">
     {[1, 2, 3].map((i) => (
-      <div key={i} className="flex items-center p-4 bg-white border border-slate-200 rounded-xl animate-pulse">
-        <div className="w-11 h-11 bg-slate-200 rounded-lg mr-4" />
-        <div className="flex-1 space-y-2">
-          <div className="h-4 bg-slate-200 rounded w-2/3" />
-          <div className="h-3 bg-slate-100 rounded w-1/3" />
+      <div key={i} className="flex items-center rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 animate-pulse">
+        <div className="w-9 h-9 bg-slate-100 rounded-lg mr-2.5" />
+        <div className="flex-1 space-y-1.5">
+          <div className="h-3.5 bg-slate-100 rounded w-2/3" />
+          <div className="h-2.5 bg-slate-50 rounded w-1/3" />
         </div>
       </div>
     ))}
@@ -50,30 +50,30 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   return (
     <div>
       {/* Breadcrumb navigation + New Folder button */}
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
           {!isAtRoot && (
             <button
               type="button"
               onClick={onNavigateBack}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-teal-50 hover:text-teal-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-teal-50 hover:text-teal-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40"
               title="Go back"
             >
-              <ChevronLeft size={20} />
+              <ChevronLeft size={18} />
             </button>
           )}
           {breadcrumbs.map((crumb, index) => (
             <React.Fragment key={crumb.id}>
-              {index > 0 && <ChevronRight size={14} className="text-slate-300 shrink-0" />}
+              {index > 0 && <ChevronRight size={12} className="shrink-0 text-slate-300" />}
               <button
                 onClick={() => onNavigateToBreadcrumb(index)}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[13px] font-medium transition-colors whitespace-nowrap ${
                   index === breadcrumbs.length - 1
-                    ? 'text-teal-700 bg-teal-50'
-                    : 'text-slate-500 hover:text-teal-600 hover:bg-slate-100'
+                    ? 'text-teal-700'
+                    : 'text-slate-400 hover:text-teal-600'
                 }`}
               >
-                {index === 0 && <Home size={13} className="shrink-0" />}
+                {index === 0 && <Home size={12} className="shrink-0" />}
                 {index === 0 && breadcrumbs.length > 1 ? 'Root' : crumb.name}
               </button>
             </React.Fragment>
@@ -82,14 +82,14 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
         <button
           type="button"
           onClick={onCreateFolder}
-          className="flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200/90 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm ring-1 ring-black/[0.04] transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98]"
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-slate-900/[0.04] px-3 text-xs font-medium text-slate-600 transition-all hover:bg-teal-50 hover:text-teal-700 active:scale-[0.97]"
         >
-          <FolderPlus size={16} className="text-teal-600" strokeWidth={2} /> New Folder
+          <FolderPlus size={14} className="text-teal-600" strokeWidth={2} /> New Folder
         </button>
       </div>
 
       {/* File / folder listing */}
-      <div className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 gap-2">
         {status === AppStatus.LOADING ? (
           <FileSkeleton />
         ) : folders.length === 0 && regularFiles.length === 0 ? (
@@ -119,24 +119,24 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                 {folders.map(folder => (
                   <div
                     key={folder.id}
-                    className="group relative flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm ring-1 ring-black/[0.03] transition-all duration-200 hover:border-slate-300/90 hover:shadow-md sm:gap-3 sm:p-4"
+                    className="group relative flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 transition-all duration-150 hover:border-slate-300/80 hover:shadow-sm sm:gap-2.5 sm:px-3.5"
                   >
                     <button
                       type="button"
-                      className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center rounded-xl py-0.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                      className="flex min-w-0 flex-1 cursor-pointer items-center rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
                       onClick={() => {
                         setRowMenuId(null);
                         onNavigateToFolder(folder);
                       }}
                     >
-                      <div className="mr-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-100 text-teal-600 sm:mr-3">
-                        <FolderOpen className="h-5 w-5" strokeWidth={2} />
+                      <div className="mr-2.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
+                        <FolderOpen className="h-[18px] w-[18px]" strokeWidth={2} />
                       </div>
                       <div className="min-w-0 flex-1 pr-1">
-                        <h4 className="truncate font-semibold text-slate-800 transition-colors group-hover:text-teal-700">{folder.name}</h4>
-                        <p className="mt-1 text-xs text-slate-500">Folder &bull; {folder.createdTime}</p>
+                        <h4 className="truncate text-sm font-semibold text-slate-800 transition-colors group-hover:text-teal-700">{folder.name}</h4>
+                        <p className="mt-0.5 text-[11px] text-slate-400">Folder · {folder.createdTime}</p>
                       </div>
-                      <ChevronRight size={20} className="ml-0.5 shrink-0 text-slate-300 transition-colors group-hover:text-teal-500" />
+                      <ChevronRight size={16} className="ml-0.5 shrink-0 text-slate-300 transition-colors group-hover:text-teal-500" />
                     </button>
                     <button
                       type="button"
@@ -145,11 +145,11 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                         setRowMenuId(null);
                         onStartEditFile(folder);
                       }}
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-teal-700 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-teal-600 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40"
                       title="Rename folder"
                       aria-label={`Rename ${folder.name}`}
                     >
-                      <Pencil size={17} strokeWidth={2} />
+                      <Pencil size={14} strokeWidth={2} />
                     </button>
                   </div>
                 ))}
@@ -177,19 +177,19 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                     : File;
                   const menuKey = `file-${file.id}`;
                   const iconBtn =
-                    'flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50';
+                    'flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-teal-600 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40';
                   return (
-                    <div key={file.id} className="group relative flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm ring-1 ring-black/[0.03] transition-all duration-200 hover:border-slate-300/90 hover:shadow-md sm:gap-3 sm:p-4">
-                      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl sm:mr-1 ${iconClass}`}>
-                        <IconComponent className="h-5 w-5" strokeWidth={2} />
+                    <div key={file.id} className="group relative flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 transition-all duration-150 hover:border-slate-300/80 hover:shadow-sm sm:gap-2.5 sm:px-3.5">
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconClass}`}>
+                        <IconComponent className="h-[18px] w-[18px]" strokeWidth={2} />
                       </div>
                       <button
                         type="button"
-                        className="min-w-0 flex-1 cursor-pointer rounded-xl py-0.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                        className="min-w-0 flex-1 cursor-pointer rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
                         onClick={() => onViewFile(file)}
                       >
-                        <h4 className="truncate font-semibold text-slate-800 transition-colors group-hover:text-teal-700">{file.name}</h4>
-                        <p className="mt-1 truncate text-xs text-slate-500">{file.createdTime} &bull; {getFriendlyFileType(file.mimeType)}</p>
+                        <h4 className="truncate text-sm font-semibold text-slate-800 transition-colors group-hover:text-teal-700">{file.name}</h4>
+                        <p className="mt-0.5 truncate text-[11px] text-slate-400">{file.createdTime} · {getFriendlyFileType(file.mimeType)}</p>
                       </button>
                       <div className="flex shrink-0 items-center gap-1">
                         <div className="hidden items-center gap-1 sm:flex">
@@ -203,7 +203,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                             title="Preview"
                             aria-label={`Preview ${file.name}`}
                           >
-                            <Eye size={17} strokeWidth={2} />
+                            <Eye size={15} strokeWidth={2} />
                           </button>
                           <button
                             type="button"
@@ -215,7 +215,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                             title="Rename"
                             aria-label={`Rename ${file.name}`}
                           >
-                            <Pencil size={17} strokeWidth={2} />
+                            <Pencil size={15} strokeWidth={2} />
                           </button>
                           <button
                             type="button"
@@ -223,11 +223,11 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                               e.stopPropagation();
                               onDeleteFile(file);
                             }}
-                            className={`${iconBtn} border-rose-100/90 text-rose-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700`}
+                            className={`${iconBtn} text-rose-500 hover:bg-rose-50 hover:text-rose-600`}
                             title="Delete"
                             aria-label={`Delete ${file.name}`}
                           >
-                            <Trash2 size={17} strokeWidth={2} />
+                            <Trash2 size={15} strokeWidth={2} />
                           </button>
                         </div>
                         <div className="relative sm:hidden">
@@ -238,7 +238,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                             title="File actions"
                             aria-expanded={rowMenuId === menuKey}
                           >
-                            <MoreHorizontal size={18} strokeWidth={2} />
+                            <MoreHorizontal size={16} strokeWidth={2} />
                           </button>
                           {rowMenuId === menuKey && (
                             <>
@@ -248,7 +248,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                                 aria-label="Close menu"
                                 onClick={() => setRowMenuId(null)}
                               />
-                              <div className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 py-1 shadow-xl shadow-slate-900/10 ring-1 ring-black/[0.04] backdrop-blur-md">
+                              <div className="absolute right-0 top-full z-20 mt-1 w-48 overflow-hidden rounded-xl border border-slate-200/70 bg-white/95 py-1 shadow-lg shadow-slate-900/8 backdrop-blur-md">
                                 <button
                                   type="button"
                                   className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"

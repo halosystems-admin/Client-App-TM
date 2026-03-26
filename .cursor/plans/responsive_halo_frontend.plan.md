@@ -58,14 +58,14 @@ Deliver explicit UX paradigms—not a shrunk desktop view.
 **Global / shell**
 
 - `[client/src/index.css](../../client/src/index.css)`: Add utilities such as `.pb-safe` using `env(safe-area-inset-bottom)`; optional min-height `dvh` shortcuts.
-- `[client/src/App.tsx](../../client/src/App.tsx)`: Root uses **h-dvh**, flex children get **min-h-0**; optional `**sidebarOpen`** and overlay drawer with the same sidebar content (or a slim variant) below `**md**` when a patient is selected.
+- `[client/src/App.tsx](../../client/src/App.tsx)`: Root uses **h-dvh**, flex children get **min-h-0**; optional `**sidebarOpen`** and overlay drawer with the same sidebar content (or a slim variant) below `**md`** when a patient is selected.
 
 **Workspace layout**
 
 - `[client/src/pages/PatientWorkspace.tsx](../../client/src/pages/PatientWorkspace.tsx)`:
   - **Structure:** header **shrink-0** → main **flex-1 flex flex-col min-h-0** (nested scroll only where intentional).
   - **Below `lg`:** Hide desktop tab strip; **fixed bottom nav** (`z-40`) with icons: Workspace, Notes/Scribe, Scoring, Ask HALO. Pad main content for **nav height + safe-area**.
-  - **Ask HALO below `lg`:** **Controlled bottom sheet** (inset-x-0, bottom-0, **max-h-[90dvh]**, rounded top, backdrop, `**role="dialog"`** consistent with existing modals). Mount `**PatientChat**` in the sheet; same chat state as today.
+  - **Ask HALO below `lg`:** **Controlled bottom sheet** (inset-x-0, bottom-0, **max-h-[90dvh]**, rounded top, backdrop, `**role="dialog"`** consistent with existing modals). Mount `**PatientChat`** in the sheet; same chat state as today.
   - `**lg` and up:** Keep **horizontal tab strip**; chat stays an inline tab (optional split-view later).
 
 **Note editor and chat**
@@ -121,5 +121,5 @@ Deliver explicit UX paradigms—not a shrunk desktop view.
 - **Ask HALO** on phone is a **sheet**, thumb-reachable; keyboard behavior acceptable on first ship.
 - **Scribe** FAB never under home indicator or bottom nav.
 - **Delete patient** discoverable without hover.
-- `**lg+`** familiar (tabs + sidebar); `**md`–`lg**` usable without horizontal squeeze.
+- `**lg+`** familiar (tabs + sidebar); `**md`–`lg`** usable without horizontal squeeze.
 
