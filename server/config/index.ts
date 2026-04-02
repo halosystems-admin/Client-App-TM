@@ -30,8 +30,8 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
 
-  // URLs
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+  // URLs: CORS + post-OAuth redirect (FRONTEND_URL preferred, CLIENT_URL fallback).
+  clientUrl: process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173',
   productionUrl: process.env.PRODUCTION_URL || '',
 
   // Drive API

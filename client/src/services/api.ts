@@ -38,7 +38,7 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
     const hint =
       !API_BASE && typeof window !== 'undefined'
         ? ' Cannot reach the API. Is the dev server running (npm run dev:server)?'
-        : ' Check the network and that CLIENT_URL / CORS match your browser origin.';
+        : ' Check the network and that FRONTEND_URL (or CLIENT_URL) / CORS match your browser origin.';
     throw new ApiError(
       `${err instanceof Error ? err.message : 'Network error'}.${hint}`,
       0
