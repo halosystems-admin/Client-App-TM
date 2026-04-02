@@ -20,6 +20,10 @@ const app = express();
 // --- CRITICAL HEROKU FIX ---
 app.set('trust proxy', 1);
 
+const corsOptions = { origin: config.clientUrl, credentials: true };
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
 const PostgresqlStore = connectPgSimple(session);
 
 function createSessionStore(): session.Store | undefined {
@@ -74,16 +78,11 @@ const authLimiter = rateLimit({
 
 // --- MIDDLEWARE ---
 app.use(globalLimiter);
-// Allow credentialed browser fetches from the SPA when it runs on another origin/port (e.g. Vite on :5173, API on :3000).
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
 );
-app.use(cors({
-  origin: config.clientUrl,
-  credentials: true,
-}));
 app.use(express.json({ limit: '50mb' }));
 
 app.use(
