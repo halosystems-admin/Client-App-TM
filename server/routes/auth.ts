@@ -4,12 +4,27 @@ import { config } from '../config';
 
 const router = Router();
 
-// Updated to dynamically read the host (e.g., halo-main-dev...herokuapp.com)
-const getRedirectUri = (req: Request): string => {
+// Canonical callback (must match Google Cloud "Authorized redirect URIs").
+const PRODUCTION_CALLBACK = 'https://api.halo.africa/api/auth/callback';
+const DEV_CALLBACK = 'http://localhost:3000/api/auth/callback';
+
+// Normalize env typos like .../api/auth/callback/google → .../api/auth/callback
+function canonicalGoogleCallbackBase(): string {
   if (config.isProduction || process.env.NODE_ENV === 'production') {
-    return config.googleCallbackUrl || 'https://api.halo.africa/api/auth/callback';
+    const raw = (config.googleCallbackUrl || PRODUCTION_CALLBACK).replace(/\/+$/, '');
+    return raw.replace(/\/callback\/google\/?$/i, '/callback');
   }
-  return 'http://localhost:3000/api/auth/callback';
+  return DEV_CALLBACK;
+}
+
+/** redirect_uri for authorize + token exchange (must match exactly for each flow). */
+const getRedirectUri = (req: Request): string => {
+  const base = canonicalGoogleCallbackBase();
+  // Legacy: Google may still redirect to /callback/google if that URI was authorized before.
+  if (req.baseUrl === '/api/auth' && req.path === '/callback/google') {
+    return `${base}/google`;
+  }
+  return base;
 };
 
 function startGoogleOAuth(
@@ -63,7 +78,7 @@ authBrowserEntryRouter.get('/google', (req: Request, res: Response) => {
   startGoogleOAuth(req, res, (authUrl) => res.redirect(authUrl));
 });
 
-router.get('/callback', async (req: Request, res: Response) => {
+async function handleGoogleOAuthCallback(req: Request, res: Response): Promise<void> {
   const code = req.query.code as string | undefined;
 
   const state = req.query.state as string | undefined;
@@ -82,7 +97,6 @@ router.get('/callback', async (req: Request, res: Response) => {
   }
 
   try {
-    // Pass the req object into the function here too
     const redirectUri = getRedirectUri(req);
 
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
@@ -135,7 +149,10 @@ router.get('/callback', async (req: Request, res: Response) => {
     console.error('Auth callback error:', err);
     res.status(500).json({ error: 'Authentication failed. Please try again.' });
   }
-});
+}
+
+router.get('/callback', handleGoogleOAuthCallback);
+router.get('/callback/google', handleGoogleOAuthCallback);
 
 router.get('/me', (req: Request, res: Response) => {
   if (req.session.accessToken) {
