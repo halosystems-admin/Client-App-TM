@@ -96,6 +96,7 @@ app.use(
       secure: config.isProduction ? true : false,
       httpOnly: true,
       sameSite: config.isProduction ? 'none' : 'lax',
+      domain: config.isProduction ? config.cookieDomain : undefined,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     },
   })

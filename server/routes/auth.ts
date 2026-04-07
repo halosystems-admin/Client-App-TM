@@ -7,7 +7,7 @@ const router = Router();
 // Updated to dynamically read the host (e.g., halo-main-dev...herokuapp.com)
 const getRedirectUri = (req: Request): string => {
   if (config.isProduction || process.env.NODE_ENV === 'production') {
-    return `https://${req.get('host')}/api/auth/callback`;
+    return config.googleCallbackUrl || 'https://api.halo.africa/api/auth/callback';
   }
   return 'http://localhost:3000/api/auth/callback';
 };

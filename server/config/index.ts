@@ -17,6 +17,7 @@ export const config = {
   // Google OAuth
   googleClientId: process.env.GOOGLE_CLIENT_ID!,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  googleCallbackUrl: process.env.GOOGLE_CALLBACK_URL || '',
 
   // AI
   geminiApiKey: process.env.GEMINI_API_KEY!,
@@ -24,6 +25,7 @@ export const config = {
 
   // Session
   sessionSecret: process.env.SESSION_SECRET!,
+  cookieDomain: process.env.COOKIE_DOMAIN || undefined,
 
   // Server
   port: Number(process.env.PORT) || 3000,
