@@ -12,7 +12,11 @@ const getRedirectUri = (req: Request): string => {
   return 'http://localhost:3000/api/auth/callback';
 };
 
-router.get('/login-url', (req: Request, res: Response) => {
+function startGoogleOAuth(
+  req: Request,
+  res: Response,
+  onReady: (authUrl: string) => void
+): void {
   if (!config.googleClientId) {
     res.status(500).json({ error: 'Server misconfigured: missing Google Client ID.' });
     return;
@@ -25,13 +29,12 @@ router.get('/login-url', (req: Request, res: Response) => {
     'profile',
   ].join(' ');
 
-  // Pass the req object into the function here
   const redirectUri = getRedirectUri(req);
 
   const state = crypto.randomBytes(16).toString('hex');
   (req.session as any).oauthState = state;
 
-  const url =
+  const authUrl =
     'https://accounts.google.com/o/oauth2/v2/auth?' +
     `client_id=${config.googleClientId}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
@@ -40,15 +43,24 @@ router.get('/login-url', (req: Request, res: Response) => {
     `&access_type=offline` +
     `&state=${encodeURIComponent(state)}`;
 
-  // Persist session before sending URL so callback can read oauthState
   req.session.save((err) => {
     if (err) {
-      console.error('Session save error (login-url):', err);
+      console.error('Session save error (google OAuth):', err);
       res.status(500).json({ error: 'Could not start sign-in. Please try again.' });
       return;
     }
-    res.json({ url });
+    onReady(authUrl);
   });
+}
+
+router.get('/login-url', (req: Request, res: Response) => {
+  startGoogleOAuth(req, res, (authUrl) => res.json({ url: authUrl }));
+});
+
+/** Browser redirect entry (mounted at /auth); callback stays at /api/auth/callback. */
+export const authBrowserEntryRouter = Router();
+authBrowserEntryRouter.get('/google', (req: Request, res: Response) => {
+  startGoogleOAuth(req, res, (authUrl) => res.redirect(authUrl));
 });
 
 router.get('/callback', async (req: Request, res: Response) => {

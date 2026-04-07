@@ -7,7 +7,7 @@ import pg from 'pg';
 import connectPgSimple from 'connect-pg-simple';
 import path from 'path';
 import { config } from './config';
-import authRoutes from './routes/auth';
+import authRoutes, { authBrowserEntryRouter } from './routes/auth';
 import driveRoutes from './routes/drive';
 import aiRoutes from './routes/ai';
 import notesProxyRoutes from './routes/notesProxy';
@@ -104,6 +104,7 @@ app.use(
 );
 
 // --- ROUTES ---
+app.use('/auth', authLimiter, authBrowserEntryRouter);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/drive', requireAuth, driveRoutes);
 app.use('/api/ai', aiLimiter, requireAuth, aiRoutes);
