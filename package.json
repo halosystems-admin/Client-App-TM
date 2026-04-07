@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev:server": "nodemon --watch server --ext ts,json --exec ts-node server/index.ts",
     "dev:client": "cd client && npm run dev",
