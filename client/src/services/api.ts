@@ -69,7 +69,6 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
 }
 
 // --- AUTH ---
-export const getLoginUrl = () => request<{ url: string }>('/api/auth/login-url');
 export const checkAuth = () =>
   request<{ signedIn: boolean; email?: string; user_id?: string; notesApiAvailable?: boolean }>('/api/auth/me');
 export const logout = () => request('/api/auth/logout', { method: 'POST' });

@@ -22,6 +22,7 @@ app.set('trust proxy', 1);
 
 const corsOptions = { origin: config.clientUrl, credentials: true };
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 const PostgresqlStore = connectPgSimple(session);
 

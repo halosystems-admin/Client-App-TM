@@ -7,7 +7,6 @@ import { SettingsModal, type SettingsModalTab } from './components/SettingsModal
 import { CalendarModal } from './components/CalendarModal';
 import {
   checkAuth,
-  getLoginUrl,
   logout,
   fetchAllPatients,
   createPatient,
@@ -215,21 +214,10 @@ export const App = () => {
     checkSession();
   }, []);
 
-  const handleSignIn = async () => {
+  const handleSignIn = () => {
     if (loading) return;
     setLoading(true);
-    try {
-      const { url } = await getLoginUrl();
-      if (!url || typeof url !== 'string') {
-        showToast('Sign-in response was invalid. Check server logs.', 'error');
-        setLoading(false);
-        return;
-      }
-      window.location.assign(url);
-    } catch (error) {
-      showToast(getErrorMessage(error), 'error');
-      setLoading(false);
-    }
+    window.location.href = `${import.meta.env.VITE_API_URL}/auth/google`;
   };
 
   const handleLogout = async () => {

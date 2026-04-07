@@ -33,7 +33,10 @@ export const config = {
   isProduction: process.env.NODE_ENV === 'production',
 
   // URLs: CORS + post-OAuth redirect (FRONTEND_URL preferred, CLIENT_URL fallback).
-  clientUrl: process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173',
+  clientUrl:
+    process.env.FRONTEND_URL ||
+    process.env.CLIENT_URL ||
+    (process.env.NODE_ENV === 'production' ? 'https://app.halo.africa' : 'http://localhost:5173'),
   productionUrl: process.env.PRODUCTION_URL || '',
 
   // Drive API
