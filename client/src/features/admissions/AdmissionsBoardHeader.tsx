@@ -1,27 +1,22 @@
 import React from 'react';
 import { ArrowLeft, LayoutPanelTop, Plus, Search, Settings } from 'lucide-react';
-import type { BoardFilterMode } from './admissionsUtils';
 import type { AdmissionsViewMode } from '../../../../shared/types';
 
-const VIEW_FILTER_OPTIONS: { 
-  boardView?: boolean; 
-  id: BoardFilterMode | AdmissionsViewMode;
+const VIEW_OPTIONS: {
+  id: AdmissionsViewMode;
   label: string;
   emoji: string;
 }[] = [
-  { boardView: true, id: 'all', label: 'All', emoji: '📋' },
-  { boardView: true, id: 'openTasks', label: 'Open tasks', emoji: '✓' },
-  { boardView: false, id: 'today', label: 'Today', emoji: '📅' },
-  { boardView: false, id: 'critical', label: 'Critical', emoji: '🔴' },
-  { boardView: false, id: 'discharge', label: 'Discharge', emoji: '👋' },
+  { id: 'board', label: 'Board', emoji: '📋' },
+  { id: 'today', label: 'My tasks', emoji: '📅' },
+  { id: 'critical', label: 'Critical', emoji: '🔴' },
+  { id: 'discharge', label: 'Discharge', emoji: '👋' },
 ];
 
 interface Props {
   onBack: () => void;
   boardSearch: string;
   onBoardSearchChange: (value: string) => void;
-  filterMode: BoardFilterMode;
-  onFilterModeChange: (mode: BoardFilterMode) => void;
   saving: boolean;
   updatedAt: string;
   onAddPatient: () => void;
@@ -34,8 +29,6 @@ export const AdmissionsBoardHeader: React.FC<Props> = ({
   onBack,
   boardSearch,
   onBoardSearchChange,
-  filterMode,
-  onFilterModeChange,
   saving,
   updatedAt,
   onAddPatient,
@@ -72,7 +65,7 @@ export const AdmissionsBoardHeader: React.FC<Props> = ({
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900 md:text-[28px]">Admissions</h1>
             <p className="mt-0.5 text-sm text-slate-500">
-              Inpatient board with wards, tasks, and handovers in one calm view.
+              Prioritize urgency, active tasks, and discharge readiness at a glance.
             </p>
           </div>
         </div>
@@ -98,35 +91,16 @@ export const AdmissionsBoardHeader: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Unified view/filter tabs */}
       <div className="mt-3.5 overflow-x-auto -mx-4 px-4 md:-mx-8 md:px-8">
         <div className="inline-flex gap-1.5 pb-1">
-          {VIEW_FILTER_OPTIONS.map(({ boardView, id, label, emoji }) => {
-            // Show board filter options when in board view, show view options otherwise
-            const isCurrentOption =
-              (currentView === 'board' && boardView && (id === filterMode))
-              || (currentView !== 'board' && !boardView && (id === currentView));
-
-            const handleClick = () => {
-              if (boardView) {
-                onFilterModeChange(id as BoardFilterMode);
-              } else {
-                onViewChange?.(id as AdmissionsViewMode);
-              }
-            };
-
-            // Only show if:
-            // - In board view and this is a board filter option
-            // - Not in board view and this is a view option
-            if ((currentView === 'board' && !boardView) || (currentView !== 'board' && boardView)) {
-              return null;
-            }
+          {VIEW_OPTIONS.map(({ id, label, emoji }) => {
+            const isCurrentOption = id === currentView;
 
             return (
               <button
                 key={id}
                 type="button"
-                onClick={handleClick}
+                onClick={() => onViewChange?.(id)}
                 className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition ${
                   isCurrentOption
                     ? 'bg-cyan-500 text-white shadow-sm'

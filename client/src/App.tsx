@@ -19,13 +19,122 @@ import {
 import { normalizeUserSettings } from '../../shared/types';
 import type { Patient, UserSettings } from '../../shared/types';
 import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, Clock, Play, User, PanelLeft } from 'lucide-react';
+import { AdmissionsPageLoader } from './features/admissions/AdmissionsPageLoader';
 
 const CalendarPage = lazy(() =>
   import('./pages/CalendarPage').then((m) => ({ default: m.CalendarPage }))
 );
-const AdmissionsPage = lazy(() =>
-  import('./pages/AdmissionsPage').then((m) => ({ default: m.AdmissionsPage }))
-);
+
+function AdmissionsLoadingFallback() {
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState('Preparing admissions board...');
+
+  useEffect(() => {
+    setLoadingProgress(0);
+    setLoadingMessage('Preparing admissions board...');
+
+    const progressInterval = window.setInterval(() => {
+      setLoadingProgress((p) => {
+        const next = Math.min(p + Math.random() * 14, 92);
+        if (next < 38) {
+          setLoadingMessage('Preparing admissions board...');
+        } else if (next < 74) {
+          setLoadingMessage('Syncing urgency, tasks, and discharge status...');
+        } else {
+          setLoadingMessage('Finalizing live board layout...');
+        }
+        return next;
+      });
+    }, 200);
+
+    return () => {
+      window.clearInterval(progressInterval);
+    };
+  }, []);
+
+  return (
+    <div className="flex min-h-0 flex-1 w-full flex-col bg-[linear-gradient(180deg,#f6fbfe_0%,#edf7fb_100%)]">
+      <div className="border-b border-[#dceaf2] bg-white/92 backdrop-blur-sm">
+        <div className="mx-auto flex w-full max-w-[1500px] flex-wrap items-center justify-between gap-4 px-5 py-5 md:px-8">
+          <div className="flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-[linear-gradient(180deg,#ebf9fd_0%,#dff4fb_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+              <div className="h-6 w-6 rounded-md border border-[#8fd3e8] bg-[linear-gradient(180deg,#ecfafe_0%,#dcf3fb_100%)]" />
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[#6aa9c6]">
+                Admissions
+              </p>
+              <h1 className="text-[28px] font-semibold tracking-tight text-slate-800">
+                Live Board
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Prioritize urgency, active tasks, and discharge readiness at a glance.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 md:gap-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e7ef] bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
+              <Loader className="h-3.5 w-3.5 animate-spin text-[#55a9d3]" />
+              Syncing
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e7ef] bg-[#f8fcfe] px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
+              {Math.floor(loadingProgress)}% complete
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-hidden px-4 py-4 md:px-6 md:py-6">
+        <div className="mx-auto grid h-full max-w-[1500px] min-h-0 gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+          <aside className="flex min-h-[300px] flex-col overflow-hidden rounded-[30px] border border-[#dbe9f1] bg-white p-5 shadow-[0_22px_55px_-36px_rgba(15,23,42,0.4)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#86adc2]">Loading status</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-800">{loadingMessage}</h2>
+            <div className="mt-4 h-2 w-full rounded-full bg-[#e8f1f6]">
+              <div
+                className="h-full rounded-full bg-[linear-gradient(90deg,#53c4e2_0%,#339fd2_100%)] transition-all duration-300"
+                style={{ width: `${loadingProgress}%` }}
+              />
+            </div>
+            <div className="mt-5 space-y-2.5">
+              {[0, 1, 2].map((item) => (
+                <div key={item} className="rounded-xl border border-[#e4eff5] bg-[#f8fcfe] p-3">
+                  <div className="h-3 w-2/3 animate-pulse rounded bg-[#d7e8f2]" />
+                  <div className="mt-2 h-2.5 w-1/2 animate-pulse rounded bg-[#deedf5]" />
+                </div>
+              ))}
+            </div>
+          </aside>
+
+          <div className="halo-calendar h-full overflow-hidden rounded-[26px] border border-[#dce9f1] bg-white p-4 md:p-5">
+            <div className="grid h-full grid-cols-1 gap-3 md:grid-cols-3">
+              {[0, 1, 2].map((column) => (
+                <div key={column} className="rounded-2xl border border-[#e3eef4] bg-[#f9fcfe] p-3">
+                  <div className="mb-3 h-3.5 w-24 animate-pulse rounded bg-[#d7e8f2]" />
+                  <div className="space-y-2.5">
+                    {[0, 1, 2, 3].map((card) => (
+                      <div key={`${column}-${card}`} className="rounded-xl border border-[#e5eff5] bg-white p-3">
+                        <div className="h-3 w-3/4 animate-pulse rounded bg-[#dcebf4]" />
+                        <div className="mt-2 h-2.5 w-1/2 animate-pulse rounded bg-[#e5f1f7]" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="fixed top-0 left-0 right-0 h-1 bg-slate-200 z-50">
+          <div
+            className="h-full bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-500 transition-all duration-300 ease-out"
+            style={{ width: `${loadingProgress}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const HAS_OPENED_PATIENT_KEY = 'halo_hasOpenedPatient';
 
@@ -59,6 +168,10 @@ function isPractitionerProfileComplete(s: UserSettings | null | undefined): bool
 }
 
 type MainView = 'home' | 'calendar' | 'admissions';
+type PatientLaunchContext = {
+  tab?: 'overview' | 'notes' | 'chat' | 'sessions';
+  freshSession?: boolean;
+};
 
 export const App = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -82,6 +195,8 @@ export const App = () => {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [mainView, setMainView] = useState<MainView>('home');
+  const [patientOriginView, setPatientOriginView] = useState<MainView | null>(null);
+  const [admissionsReturnPatientId, setAdmissionsReturnPatientId] = useState<string | null>(null);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [patientToDelete, setPatientToDelete] = useState<Patient | null>(null);
@@ -99,6 +214,7 @@ export const App = () => {
   const [userId, setUserId] = useState<string | undefined>();
   const [notesApiAvailable, setNotesApiAvailable] = useState(false);
   const [loginTime] = useState<number>(Date.now());
+  const [patientLaunchContext, setPatientLaunchContext] = useState<PatientLaunchContext | null>(null);
 
   // Toast notification state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -118,8 +234,22 @@ export const App = () => {
 
   // Persist selected patient to sessionStorage so it survives page refresh
   // Also track recently opened patients in localStorage
-  const selectPatient = useCallback((id: string | null) => {
-    setMainView('home');
+  const selectPatient = useCallback((id: string | null, launchContext?: PatientLaunchContext) => {
+    if (id) {
+      if (mainView !== 'home') {
+        setPatientOriginView(mainView);
+      }
+      setMainView('home');
+      setPatientLaunchContext(launchContext ?? null);
+    } else {
+      setPatientLaunchContext(null);
+      if (patientOriginView) {
+        setMainView(patientOriginView);
+        setPatientOriginView(null);
+      } else {
+        setMainView('home');
+      }
+    }
     setSelectedPatientId(id);
     if (id) {
       sessionStorage.setItem('halo_selectedPatientId', id);
@@ -134,7 +264,7 @@ export const App = () => {
     } else {
       sessionStorage.removeItem('halo_selectedPatientId');
     }
-  }, []);
+  }, [mainView, patientOriginView]);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
@@ -168,11 +298,12 @@ export const App = () => {
       prev !== null &&
       selectedPatientId === null &&
       hasOpenedPatient &&
-      !isLg
+      !isLg &&
+      mainView === 'home'
     ) {
       setPatientsDrawerOpen(true);
     }
-  }, [selectedPatientId, hasOpenedPatient, isLg]);
+  }, [selectedPatientId, hasOpenedPatient, isLg, mainView]);
 
   // Check if user has an active session
   useEffect(() => {
@@ -233,6 +364,7 @@ export const App = () => {
     setIsSignedIn(false);
     clearHasOpenedPatient();
     setHasOpenedPatient(false);
+    setPatientLaunchContext(null);
     selectPatient(null);
   };
 
@@ -483,6 +615,8 @@ export const App = () => {
               }}
               onOpenAdmissions={() => {
                 setPatientsDrawerOpen(false);
+                setAdmissionsReturnPatientId(null);
+                setAdmissionsReturnPatientId(null);
                 if (admissionsEnabled) setMainView('admissions');
               }}
               showAdmissionsAction={admissionsEnabled}
@@ -516,22 +650,28 @@ export const App = () => {
             />
           </Suspense>
         ) : mainView === 'admissions' && admissionsEnabled ? (
-          <Suspense
-            fallback={
-              <div className="flex min-h-0 flex-1 w-full items-center justify-center bg-slate-50">
-                <div className="flex flex-col items-center gap-4">
-                  <Loader className="animate-spin text-teal-600" size={32} />
-                  <p className="text-sm text-slate-400 font-medium">Loading admissions...</p>
-                </div>
-              </div>
-            }
-          >
-            <AdmissionsPage
+          <Suspense fallback={<AdmissionsLoadingFallback />}>
+            <AdmissionsPageLoader
               patients={patients}
+              focusPatientId={admissionsReturnPatientId}
+              admissionsSettings={userSettings?.admissionsSettings}
               onToast={showToast}
               onClose={() => setMainView('home')}
-              onOpenPatient={(patientId) => {
-                selectPatient(patientId);
+              onSaveAdmissionsSettings={async (admissionsSettings) => {
+                const base = normalizeUserSettings(userSettings ?? undefined);
+                const normalized = normalizeUserSettings({
+                  ...base,
+                  admissionsSettings: {
+                    ...base.admissionsSettings,
+                    ...admissionsSettings,
+                  },
+                });
+                await saveSettings(normalized);
+                setUserSettings(normalized);
+              }}
+              onOpenPatient={(patientId, options) => {
+                setAdmissionsReturnPatientId(patientId);
+                selectPatient(patientId, options);
               }}
             />
           </Suspense>
@@ -545,6 +685,7 @@ export const App = () => {
             customTemplate={userSettings?.noteTemplate === 'custom' ? userSettings.customTemplateContent : undefined}
             userId={userId}
             notesApiAvailable={notesApiAvailable}
+            launchContext={patientLaunchContext}
             showScoringInBottomNav={userSettings?.showScoringInBottomNav !== false}
           />
         ) : (
@@ -655,6 +796,7 @@ export const App = () => {
         onSave={handleSaveSettings}
         userEmail={userEmail}
         userId={userId}
+        notesUserId={userSettings?.haloUserId}
         notesApiAvailable={notesApiAvailable}
         loginTime={loginTime}
         initialTab={settingsInitialTab}

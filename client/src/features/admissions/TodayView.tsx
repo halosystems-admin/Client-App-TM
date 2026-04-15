@@ -47,7 +47,7 @@ export default function TodayView({
                           <p className="text-sm text-slate-600 truncate">{card.diagnosis}</p>
                           {card.tasks.length > 0 && (
                             <p className="text-xs text-slate-500 mt-1">
-                              {card.tasks.filter((t) => !t.done).length}/{card.tasks.length} tasks
+                              {card.tasks.filter((t) => !t.done).length}/{card.tasks.length} tasks complete
                             </p>
                           )}
                         </div>

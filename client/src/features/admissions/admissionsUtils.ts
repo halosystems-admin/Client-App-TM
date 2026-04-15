@@ -61,6 +61,47 @@ function cardMatchesFilter(card: AdmissionsCard, mode: BoardFilterMode): boolean
   return true;
 }
 
+export function getOpenTaskCount(card: AdmissionsCard): number {
+  return card.tasks.filter((task) => !task.done).length;
+}
+
+export function getTaskSummary(card: AdmissionsCard): string {
+  const openTasks = getOpenTaskCount(card);
+  const totalTasks = card.tasks.length;
+  if (totalTasks === 0) return 'No tasks';
+  return `${openTasks}/${totalTasks} tasks complete`;
+}
+
+function getUrgencyRank(card: AdmissionsCard): number {
+  const color = (card.triageColor || 'gray').toLowerCase();
+  const order: Record<string, number> = {
+    red: 0,
+    orange: 1,
+    yellow: 2,
+    green: 3,
+    blue: 4,
+    gray: 5,
+  };
+  return order[color] ?? 5;
+}
+
+export function sortCardsByPriority(cards: AdmissionsCard[]): AdmissionsCard[] {
+  return [...cards].sort((left, right) => {
+    const urgencyDiff = getUrgencyRank(left) - getUrgencyRank(right);
+    if (urgencyDiff !== 0) return urgencyDiff;
+
+    const leftOpenTasks = getOpenTaskCount(left);
+    const rightOpenTasks = getOpenTaskCount(right);
+    if (leftOpenTasks !== rightOpenTasks) return rightOpenTasks - leftOpenTasks;
+
+    const leftTaskCount = left.tasks.length;
+    const rightTaskCount = right.tasks.length;
+    if (leftTaskCount !== rightTaskCount) return rightTaskCount - leftTaskCount;
+
+    return new Date(left.enteredColumnAt).getTime() - new Date(right.enteredColumnAt).getTime();
+  });
+}
+
 /** Client-side search + ward filter (does not mutate source board). */
 export function buildVisibleBoard(
   board: AdmissionsBoard,

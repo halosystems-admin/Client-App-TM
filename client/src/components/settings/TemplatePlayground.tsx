@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Play, FileText, X } from 'lucide-react';
 import type { TemplateItem } from '../../../../shared/types';
-// import { generateNote } from '../../services/api'; // Commented out while backend returns 404
+import { ApiError } from '../../services/api';
+import { getTemplates } from '../../services/api';
 
 interface GeneratedOutput {
   title: string;
@@ -53,11 +54,7 @@ function getScriptKey(template: TemplateItem): string {
   return 'default';
 }
 
-interface TemplatePlaygroundProps {
-  userId?: string;
-}
-
-export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps) {
+export function TemplatePlayground() {
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -73,62 +70,18 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
     try {
       setLoading(true);
       setFetchError(null);
-      const apiUrl = import.meta.env.VITE_NOTES_API_URL ?? '';
-      const cleanApiUrl = apiUrl.replace(/\/$/, '');
-      const requestUrl = `${cleanApiUrl}/get_templates`;
-
-      console.log('DEBUG: Exact URL being called:', requestUrl);
-
-      const response = await fetch(requestUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ user_id: 'demo' }),
-      });
-
-      const rawText = await response.text();
-      console.log('DEBUG - RAW SERVER RESPONSE:', rawText);
-
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status} - ${rawText}`);
-      }
-
-      if (!rawText || rawText === 'null' || rawText.trim() === '') {
-        console.log('DEBUG: User has no templates (empty response).');
-        setTemplates([]);
-        return;
-      }
-
-      const data = JSON.parse(rawText);
-      console.log('DEBUG: Parsed data from DB:', data);
-
-      const templatesArray: TemplateItem[] = [];
-
-      if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
-        for (const [key, value] of Object.entries(data)) {
-          if (typeof value === 'object' && value !== null) {
-            const v = value as Record<string, unknown>;
-            templatesArray.push({
-              id: key,
-              name: (v.name as string) || key.replace(/_/g, ' ').toUpperCase(),
-              description: (v.description as string) || '',
-              ...v,
-            } as TemplateItem);
-          }
-        }
-      } else if (Array.isArray(data)) {
-        templatesArray.push(...(data as TemplateItem[]));
-      }
-
-      console.log('DEBUG: Final Templates Array for UI:', templatesArray);
+      const templatesArray = await getTemplates();
       setTemplates(templatesArray);
       if (templatesArray.length > 0 && !selectedTemplate) {
         setSelectedTemplate(templatesArray[0]);
       }
     } catch (err) {
       console.error('Fetch Error:', err);
-      setFetchError('Could not load templates. See console for details.');
+      if (err instanceof ApiError && err.status === 401) {
+        setFetchError('Session expired. Please sign in again to load templates.');
+      } else {
+        setFetchError('Could not load templates. See console for details.');
+      }
       setTemplates([]);
     } finally {
       setLoading(false);
@@ -140,10 +93,7 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
   }, []);
 
   const scriptKey = selectedTemplate ? getScriptKey(selectedTemplate) : 'default';
-  const scripts = useMemo(
-    () => DEMO_SCRIPTS[scriptKey] ?? DEMO_SCRIPTS.default,
-    [scriptKey]
-  );
+  const scripts = useMemo(() => DEMO_SCRIPTS[scriptKey] ?? DEMO_SCRIPTS.default, [scriptKey]);
 
   const handleSelectScript = (text: string) => {
     setInputText(text);
@@ -156,12 +106,12 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
       setError('Select a template and enter or choose clinical input.');
       return;
     }
+
     setError(null);
     setGenerateLoading(true);
     setGeneratedContent(null);
     setGeneratedOutput(null);
 
-    // Temporary mock generation while backend returns 404 (missing webhook URL in Firebase)
     const selectedScript = inputText.trim();
     setTimeout(() => {
       setGeneratedOutput({
@@ -175,25 +125,6 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
       setGenerateLoading(false);
       setShowModal(true);
     }, 2000);
-
-    // Real API call (commented out until backend fix)
-    // try {
-    //   const result = await generateNote({
-    //     user_id: userId,
-    //     template_id: selectedTemplate.id,
-    //     text: inputText.trim(),
-    //     return_type: 'note',
-    //   });
-    //   if (result.content != null) {
-    //     setGeneratedContent(result.content);
-    //   } else {
-    //     setError('No content returned from API.');
-    //   }
-    // } catch (err) {
-    //   setError(err instanceof Error ? err.message : 'Failed to generate note.');
-    // } finally {
-    //   setGenerateLoading(false);
-    // }
   };
 
   if (loading) {
@@ -224,7 +155,6 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
 
   return (
     <div className="space-y-5">
-      {/* 1. Select template */}
       <div>
         <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">1. Select template</p>
         <div className="flex flex-wrap gap-2">
@@ -249,10 +179,9 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
         </div>
       </div>
 
-      {/* 2. Clinical input — scripts update dynamically by selectedTemplate.id */}
       <div>
         <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">2. Clinical input</p>
-        <p className="text-xs text-slate-500 mb-2">Choose a demo script or type your own below.</p>
+        <p className="text-xs text-slate-500 mb-2">Choose a script or type your own below.</p>
         <div className="flex flex-wrap gap-2 mb-3">
           {scripts.map((script, i) => (
             <button
@@ -282,7 +211,6 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
         />
       </div>
 
-      {/* 3. Generate button */}
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
         <button
           type="button"
@@ -290,11 +218,7 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
           disabled={generateLoading || !selectedTemplate || !inputText.trim()}
           className="inline-flex min-h-11 items-center justify-center gap-2 px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 disabled:pointer-events-none transition-colors"
         >
-          {generateLoading ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : (
-            <Play size={16} />
-          )}
+          {generateLoading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
           Generate test note
         </button>
         {error && (
@@ -304,7 +228,6 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
         )}
       </div>
 
-      {/* 4. Generated output (used when real API is active) */}
       {generatedContent != null && (
         <div>
           <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -317,7 +240,6 @@ export function TemplatePlayground({ userId = 'demo' }: TemplatePlaygroundProps)
         </div>
       )}
 
-      {/* View-Only Paper Modal (Option B) */}
       {showModal && generatedOutput && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col border border-slate-200">

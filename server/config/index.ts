@@ -62,5 +62,8 @@ export const config = {
   smtpPass: process.env.SMTP_PASS || '',
 
   // Notes / templates (optional FastAPI backend)
-  notesApiUrl: process.env.NOTES_API_URL || '',
+  notesApiUrl:
+    process.env.NOTES_API_URL ||
+    process.env.HALO_API_BASE_URL ||
+    'https://halo-functions-75316778879.africa-south1.run.app',
 } as const;

@@ -16,6 +16,7 @@ import {
   createFolder,
   askHaloStream,
   generateNote,
+  getTemplates,
 } from '../services/api';
 import {
   Upload, CheckCircle2, ChevronLeft, Loader2,
@@ -33,9 +34,13 @@ import { PatientChat } from '../components/PatientChat';
 import { getErrorMessage } from '../utils/formatting';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 
-const NOTES_API_BASE = import.meta.env.VITE_NOTES_API_URL ?? '';
-
 const LAST_TEMPLATE_KEY = 'halo_lastTemplateId';
+const SOAP_BUILTIN_TEMPLATE: TemplateItem = {
+  id: 'soap_builtin',
+  name: 'SOAP Note',
+  label: 'SOAP Note',
+  type: 'soap',
+};
 
 interface Props {
   patient: Patient;
@@ -47,6 +52,10 @@ interface Props {
   customTemplate?: string;
   userId?: string;
   notesApiAvailable?: boolean;
+  launchContext?: {
+    tab?: 'overview' | 'notes' | 'chat' | 'sessions';
+    freshSession?: boolean;
+  } | null;
   /** When false, Scoring is hidden from the compact bottom nav only (lg+ tabs unchanged). */
   showScoringInBottomNav?: boolean;
 }
@@ -60,6 +69,7 @@ export const PatientWorkspace: React.FC<Props> = ({
   customTemplate,
   userId,
   notesApiAvailable,
+  launchContext,
   showScoringInBottomNav = true,
 }) => {
   const [files, setFiles] = useState<DriveFile[]>([]);
@@ -228,6 +238,10 @@ export const PatientWorkspace: React.FC<Props> = ({
       setNoteContent("");
       setUploadMessage(null);
       setEditMode('write');
+      setActiveTemplate(null);
+      setSelectedTemplateId(null);
+      setActiveTab('overview');
+      setChatSheetOpen(false);
       setCurrentFolderId(patient.id);
       setBreadcrumbs([{ id: patient.id, name: patient.name }]);
 
@@ -306,6 +320,35 @@ export const PatientWorkspace: React.FC<Props> = ({
     loadData();
     return () => { isMounted = false; };
   }, [patient.id, patient.name, onToast]);
+
+  useEffect(() => {
+    if (!launchContext) return;
+
+    if (launchContext.freshSession) {
+      setActiveTemplate(null);
+      setSelectedTemplateId(null);
+      setNoteContent('');
+      setChatMessages([]);
+      setChatInput('');
+      setEditMode('write');
+    }
+
+    if (launchContext.tab === 'chat') {
+      if (isLg) {
+        setChatSheetOpen(false);
+        setActiveTab('chat');
+      } else {
+        setChatSheetOpen(true);
+        setActiveTab('overview');
+      }
+      return;
+    }
+
+    if (launchContext.tab) {
+      setChatSheetOpen(false);
+      setActiveTab(launchContext.tab === 'sessions' ? 'overview' : launchContext.tab);
+    }
+  }, [launchContext, isLg]);
 
   // Navigate into a subfolder
   const navigateToFolder = async (folder: DriveFile) => {
@@ -532,7 +575,6 @@ export const PatientWorkspace: React.FC<Props> = ({
         } else {
           setGenerateNoteLoading(true);
           const result = await generateNote({
-            user_id: userId,
             template_id: activeTemplate.id,
             text: rawText,
             return_type: 'note',
@@ -555,66 +597,49 @@ export const PatientWorkspace: React.FC<Props> = ({
     }
   };
 
-  const openTemplateModal = (mode: 'record' | 'save', pendingStart?: () => void) => {
+  const openTemplateModal = async (mode: 'record' | 'save', pendingStart?: () => void) => {
     setTemplateModalMode(mode);
     setTemplateModalOpen(true);
     if (pendingStart) pendingRecordStartRef.current = pendingStart;
 
-    // Always ensure at least the built-in SOAP template is visible
-    if (templates.length === 0) {
-      const soapTemplate: TemplateItem = {
-        id: 'soap_builtin',
-        name: 'SOAP Note',
-        label: 'SOAP Note',
-        type: 'soap',
-      };
-      setTemplates([soapTemplate]);
-      if (!selectedTemplateId) {
-        setSelectedTemplateId('soap_builtin');
-      }
-      setTemplatesLoading(true);
-      setTemplatesError(null);
+    if (mode === 'record') {
+      setSelectedTemplateId(null);
+    }
 
-      const apiUrl = (NOTES_API_BASE || '').replace(/\/$/, '');
-      if (!apiUrl) {
-        setTemplatesLoading(false);
-        return;
-      }
+    // Always refresh templates when opening the picker so transient failures can recover.
+    setTemplates((prev) => (prev.length > 0 ? prev : [SOAP_BUILTIN_TEMPLATE]));
+    setTemplatesLoading(true);
+    setTemplatesError(null);
 
-      const requestUrl = `${apiUrl}/get_templates`;
-      fetch(requestUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        // TEMP: backend currently uses demo user for templates.
-        // Match Settings > CustomTemplates so lists stay in sync.
-        body: JSON.stringify({ user_id: 'demo' }),
-      })
-        .then(async (res) => {
-          const text = await res.text();
-          if (!res.ok) {
-            throw new Error(text || `Status ${res.status}`);
+    try {
+      const list = await getTemplates();
+      const deduped = list.filter((item) => item.id && item.id !== SOAP_BUILTIN_TEMPLATE.id);
+      const mergedTemplates = [SOAP_BUILTIN_TEMPLATE, ...deduped];
+      setTemplates(mergedTemplates);
+
+      if (mode === 'save') {
+        setSelectedTemplateId((prev) => {
+          if (prev && mergedTemplates.some((t) => t.id === prev)) return prev;
+          let savedId: string | null = null;
+          try {
+            savedId = localStorage.getItem(LAST_TEMPLATE_KEY);
+          } catch {
+            savedId = null;
           }
-          if (!text || text === 'null' || text.trim() === '') {
-            return [];
+          if (savedId && mergedTemplates.some((t) => t.id === savedId)) {
+            return savedId;
           }
-          const data = JSON.parse(text) as unknown;
-          return normalizeTemplates(data);
-        })
-        .then((list) => {
-          if (list.length === 0) {
-            setTemplates([soapTemplate]);
-            return;
-          }
-          setTemplates([soapTemplate, ...list]);
-        })
-        .catch((err) => {
-          setTemplatesError(getErrorMessage(err));
-        })
-        .finally(() => {
-          setTemplatesLoading(false);
+          return SOAP_BUILTIN_TEMPLATE.id;
         });
+      }
+    } catch (err) {
+      setTemplates((prev) => (prev.length > 0 ? prev : [SOAP_BUILTIN_TEMPLATE]));
+      if (mode === 'save') {
+        setSelectedTemplateId((prev) => prev || SOAP_BUILTIN_TEMPLATE.id);
+      }
+      setTemplatesError(getErrorMessage(err));
+    } finally {
+      setTemplatesLoading(false);
     }
   };
 
@@ -625,6 +650,12 @@ export const PatientWorkspace: React.FC<Props> = ({
     const tmpl = templates.find((t) => t.id === chosenId);
     if (!tmpl) return;
 
+    try {
+      localStorage.setItem(LAST_TEMPLATE_KEY, chosenId);
+    } catch {
+      // ignore storage issues
+    }
+
     setActiveTemplate(tmpl);
     setTemplateModalOpen(false);
 
@@ -633,6 +664,13 @@ export const PatientWorkspace: React.FC<Props> = ({
       pendingRecordStartRef.current = null;
       startFn();
     }
+  };
+
+  const handleDiscardNote = () => {
+    setNoteContent('');
+    setActiveTemplate(null);
+    setSelectedTemplateId(null);
+    setEditMode('write');
   };
 
   // Chat handler — uses streaming for progressive response display
@@ -921,6 +959,7 @@ export const PatientWorkspace: React.FC<Props> = ({
                   onEditModeChange={setEditMode}
                   status={status}
                   onSave={handleSaveNote}
+                  onDiscard={handleDiscardNote}
                 />
               </div>
             ) : activeTab === 'chat' && isLg ? (
@@ -1007,11 +1046,7 @@ export const PatientWorkspace: React.FC<Props> = ({
               onError={(msg: string) => onToast(msg, 'error')}
               customTemplate={customTemplate}
               onRequestStartRecording={(start) => {
-                if (activeTemplate) {
-                  start();
-                } else {
-                  openTemplateModal('record', start);
-                }
+                openTemplateModal('record', start);
               }}
             />
           </div>
@@ -1069,11 +1104,7 @@ export const PatientWorkspace: React.FC<Props> = ({
           customTemplate={customTemplate}
           reserveBottomNav={false}
           onRequestStartRecording={(start) => {
-            if (activeTemplate) {
-              start();
-            } else {
-              openTemplateModal('record', start);
-            }
+            openTemplateModal('record', start);
           }}
         />
       )}

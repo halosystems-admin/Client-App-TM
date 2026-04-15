@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import { requireAuth } from '../middleware/requireAuth';
 import { config } from '../config';
 import { getTemplates, generateNote } from '../services/haloApi';
+import { getStoredHaloUserId } from '../services/userSettings';
 import {
   convertDocxBufferToPdfBuffer,
   getOrCreatePatientNotesFolder,
@@ -13,6 +14,11 @@ const router = Router();
 router.use(requireAuth);
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+async function resolveHaloUserId(req: Request, fallback: string): Promise<string> {
+  const resolved = await getStoredHaloUserId(req.session.accessToken!, req.session.userId || req.session.userEmail || fallback);
+  return resolved || fallback;
+}
 
 function isSmtpConfigured(): boolean {
   return Boolean(config.smtpHost && config.smtpUser && config.smtpPass);
@@ -27,7 +33,7 @@ function buildBaseName(fileName: string | undefined, fallback: string): string {
 // POST /api/halo/templates
 router.post('/templates', async (req: Request, res: Response) => {
   try {
-    const userId = (req.body?.user_id as string) || config.haloUserId;
+    const userId = await resolveHaloUserId(req, (req.body?.user_id as string) || config.haloUserId);
     const templates = await getTemplates(userId);
     res.json(templates);
   } catch (err) {
@@ -58,7 +64,9 @@ router.post('/generate-note', async (req: Request, res: Response) => {
       return;
     }
 
-    const userId = useMobileConfig ? config.haloMobileUserId : (user_id || config.haloUserId);
+    const userId = useMobileConfig
+      ? await resolveHaloUserId(req, config.haloMobileUserId)
+      : await resolveHaloUserId(req, user_id || config.haloUserId);
     const templateId = useMobileConfig ? config.haloMobileTemplateId : (template_id || 'clinical_note');
     console.log('[Halo] generate-note request:', { userId: userId.slice(0, 8) + '…', templateId, return_type, textLength: text.length });
     const result = await generateNote({ user_id: userId, template_id: templateId, text, return_type });
@@ -129,7 +137,9 @@ router.post('/preview-note-pdf', async (req: Request, res: Response) => {
       return;
     }
 
-    const userId = useMobileConfig ? config.haloMobileUserId : (user_id || config.haloUserId);
+    const userId = useMobileConfig
+      ? await resolveHaloUserId(req, config.haloMobileUserId)
+      : await resolveHaloUserId(req, user_id || config.haloUserId);
     const templateId = useMobileConfig ? config.haloMobileTemplateId : (template_id || 'clinical_note');
     const docxBuffer = await generateNote({
       user_id: userId,
@@ -185,7 +195,7 @@ router.post('/confirm-and-send', async (req: Request, res: Response) => {
       return;
     }
 
-    const userId = config.haloMobileUserId;
+    const userId = await resolveHaloUserId(req, config.haloMobileUserId);
     const templateId = config.haloMobileTemplateId;
     const result = await generateNote({
       user_id: userId,

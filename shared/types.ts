@@ -66,8 +66,15 @@ export type AdmissionsViewMode = 'board' | 'today' | 'critical' | 'discharge';
 
 export interface AdmissionsSettingsData {
   defaultView?: AdmissionsViewMode;
+  hiddenWardIds?: string[];
   staffTriageColors?: Record<string, TriageColor>;
 }
+
+export const DEFAULT_ADMISSIONS_SETTINGS: AdmissionsSettingsData = {
+  defaultView: 'board',
+  hiddenWardIds: [],
+  staffTriageColors: {},
+};
 
 export interface UserSettings {
   // Profile (mandatory)
@@ -84,6 +91,7 @@ export interface UserSettings {
   customTemplateContent: string;
   customTemplateName: string;
   templateId?: string;
+  haloUserId?: string;
   modules?: UserModulesSettings;
   admissionsSettings?: AdmissionsSettingsData;
   // Keep backward compatibility with current scoring UX controls.
@@ -107,10 +115,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   customTemplateName: '',
   templateId: 'clinical_note',
   modules: DEFAULT_USER_MODULES,
-  admissionsSettings: {
-    defaultView: 'board',
-    staffTriageColors: {},
-  },
+  admissionsSettings: DEFAULT_ADMISSIONS_SETTINGS,
   showScoringInBottomNav: true,
 };
 
@@ -121,6 +126,10 @@ export function normalizeUserSettings(value: Partial<UserSettings> | null | unde
     modules: {
       ...DEFAULT_USER_MODULES,
       ...(value?.modules || {}),
+    },
+    admissionsSettings: {
+      ...DEFAULT_ADMISSIONS_SETTINGS,
+      ...(value?.admissionsSettings || {}),
     },
   };
 }
@@ -277,7 +286,6 @@ export interface TemplateItem {
 export type TemplateListResponse = TemplateItem[];
 
 export interface GenerateNoteParams {
-  user_id: string;
   template_id: string;
   text: string;
   return_type: 'note' | 'docx';

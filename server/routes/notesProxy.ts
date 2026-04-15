@@ -1,10 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { config } from '../config';
 import { requireAuth } from '../middleware/requireAuth';
+import { getStoredHaloUserId } from '../services/userSettings';
 
 const router = Router();
 router.use(requireAuth);
-const NOTES_API = config.notesApiUrl?.replace(/\/$/, '');
+const FALLBACK_NOTES_API = 'https://halo-functions-75316778879.africa-south1.run.app';
+const NOTES_API = (config.notesApiUrl || FALLBACK_NOTES_API).replace(/\/$/, '');
+const FALLBACK_TEMPLATE_USER_ID = config.haloUserId;
 
 if (!NOTES_API) {
   console.warn('NOTES_API_URL not set; /api/notes proxy routes will 503.');
@@ -22,18 +25,65 @@ async function proxyPost(
   }
 
   let body: Record<string, unknown> = req.body && typeof req.body === 'object' ? { ...req.body } : {};
-  if (sendUserIdFromSession && req.session.userId) {
-    body = { ...body, user_id: req.session.userId };
+
+  if (sendUserIdFromSession) {
+    try {
+      const token = req.session.accessToken;
+      const fallbackId = req.session.userId || req.session.userEmail;
+
+      if (token) {
+        const sessionUserId = await getStoredHaloUserId(token, fallbackId);
+        if (sessionUserId) {
+          body = { ...body, user_id: sessionUserId };
+        }
+      } else if (fallbackId) {
+        body = { ...body, user_id: fallbackId };
+      } else {
+        res.status(401).json({ error: 'Not authenticated for notes templates.' });
+        return;
+      }
+    } catch (err) {
+      console.error('Notes user mapping error:', err);
+      const fallbackId = req.session.userId || req.session.userEmail;
+      if (fallbackId) {
+        body = { ...body, user_id: fallbackId };
+      }
+    }
   }
 
   try {
-    const proxyRes = await fetch(`${NOTES_API}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const callNotesApi = async (payload: Record<string, unknown>) => {
+      const response = await fetch(`${NOTES_API}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-    const contentType = proxyRes.headers.get('content-type') || '';
+      const contentType = response.headers.get('content-type') || '';
+      return { response, contentType };
+    };
+
+    let outboundBody = body;
+    let { response: proxyRes, contentType } = await callNotesApi(outboundBody);
+
+    if (path === '/get_templates' && proxyRes.ok && contentType.includes('application/json')) {
+      const data = await proxyRes.json();
+      const isEmptyTemplatesPayload =
+        data === null ||
+        (typeof data === 'string' && data.trim().toLowerCase() === 'null') ||
+        (typeof data === 'object' && data !== null && Object.keys(data as Record<string, unknown>).length === 0);
+
+      if (isEmptyTemplatesPayload && FALLBACK_TEMPLATE_USER_ID && outboundBody.user_id !== FALLBACK_TEMPLATE_USER_ID) {
+        outboundBody = { ...outboundBody, user_id: FALLBACK_TEMPLATE_USER_ID };
+        const retried = await callNotesApi(outboundBody);
+        proxyRes = retried.response;
+        contentType = retried.contentType;
+      } else {
+        res.status(proxyRes.status).json(data);
+        return;
+      }
+    }
+
     if (contentType.includes('application/json')) {
       const data = await proxyRes.json();
       res.status(proxyRes.status).json(data);
@@ -60,7 +110,7 @@ router.post('/get_templates', (req: Request, res: Response) => {
 
 /** POST /api/notes/generate_note — forwards body to FastAPI */
 router.post('/generate_note', (req: Request, res: Response) => {
-  proxyPost(req, res, '/generate_note', false);
+  proxyPost(req, res, '/generate_note', true);
 });
 
 export default router;

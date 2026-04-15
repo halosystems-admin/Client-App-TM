@@ -28,7 +28,8 @@ export class ApiError extends Error {
 async function request<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    const url = /^https?:\/\//i.test(path) ? path : `${API_BASE}${path}`;
+    res = await fetch(url, {
       ...options,
       credentials: 'include',
       headers: {
@@ -345,17 +346,35 @@ const NOTES_BASE = `${API_BASE}/api/notes`;
 function normalizeTemplates(raw: unknown): TemplateItem[] {
   const str = (v: unknown): string | undefined =>
     v === null || v === undefined ? undefined : String(v);
+  const normalizeArrayTemplates = (arr: unknown[]): TemplateItem[] =>
+    arr
+      .map((t) => {
+        const row = typeof t === 'object' && t !== null ? (t as Record<string, unknown>) : {};
+        const idRaw = row.id;
+        return {
+          id: typeof idRaw === 'string' ? idRaw : String(idRaw ?? ''),
+          name: str(row.name ?? row.label),
+          label: str(row.label ?? row.name),
+          type: row.type as string | undefined,
+          ...row,
+        };
+      })
+      .filter((t) => Boolean(t.id));
+
   if (Array.isArray(raw)) {
-    return raw.map((t) => ({
-      id: typeof t?.id === 'string' ? t.id : String(t?.id ?? ''),
-      name: str((t as Record<string, unknown>)?.name ?? (t as Record<string, unknown>)?.label),
-      label: str((t as Record<string, unknown>)?.label ?? (t as Record<string, unknown>)?.name),
-      type: (t as Record<string, unknown>)?.type as string | undefined,
-      ...(typeof t === 'object' && t !== null ? (t as Record<string, unknown>) : {}),
-    }));
+    return normalizeArrayTemplates(raw);
   }
   if (raw && typeof raw === 'object' && 'templates' in (raw as Record<string, unknown>)) {
     return normalizeTemplates((raw as { templates: unknown }).templates);
+  }
+  if (raw && typeof raw === 'object' && 'data' in (raw as Record<string, unknown>)) {
+    return normalizeTemplates((raw as { data: unknown }).data);
+  }
+  if (raw && typeof raw === 'object' && 'items' in (raw as Record<string, unknown>)) {
+    return normalizeTemplates((raw as { items: unknown }).items);
+  }
+  if (raw && typeof raw === 'object' && 'results' in (raw as Record<string, unknown>)) {
+    return normalizeTemplates((raw as { results: unknown }).results);
   }
   if (raw && typeof raw === 'object') {
     const obj = raw as Record<string, unknown>;
@@ -368,15 +387,15 @@ function normalizeTemplates(raw: unknown): TemplateItem[] {
         type: row.type as string | undefined,
         ...row,
       };
-    });
+    }).filter((t) => Boolean(t.id));
   }
   return [];
 }
 
-export async function getTemplates(userId: string): Promise<TemplateListResponse> {
+export async function getTemplates(): Promise<TemplateListResponse> {
   const data = await request<unknown>(`${NOTES_BASE}/get_templates`, {
     method: 'POST',
-    body: JSON.stringify({ user_id: userId }),
+    body: JSON.stringify({}),
   });
   return normalizeTemplates(data);
 }
@@ -387,7 +406,11 @@ export async function generateNote(params: GenerateNoteParams): Promise<{ conten
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      template_id: params.template_id,
+      text: params.text,
+      return_type,
+    }),
   });
   if (res.status === 401) {
     window.location.href = '/';

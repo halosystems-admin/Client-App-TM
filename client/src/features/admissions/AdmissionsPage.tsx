@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   closestCorners,
   DndContext,
@@ -10,7 +10,14 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, horizontalListSortingStrategy } from '@dnd-kit/sortable';
-import type { AdmissionsBoard, AdmissionsCard, Patient, AdmissionsViewMode, TriageColor } from '../../../../shared/types';
+import type {
+  AdmissionsSettingsData,
+  AdmissionsBoard,
+  AdmissionsCard,
+  Patient,
+  AdmissionsViewMode,
+  TriageColor,
+} from '../../../../shared/types';
 import { ApiError, fetchAdmissionsBoard, saveAdmissionsBoard } from '../../services/api';
 import { Loader2, Plus } from 'lucide-react';
 import { AdmissionsAddPatientModal } from './AdmissionsAddPatientModal';
@@ -23,32 +30,44 @@ import MoveToModal from './MoveToModal';
 import TriageColorPicker from './TriageColorPicker';
 import AdmissionsSettingsModal from './AdmissionsSettingsModal';
 import AdmissionsConflictDialog from './AdmissionsConflictDialog';
+import { primeAdmissionsBoard } from './admissionsBoardResource';
 import {
-  type BoardFilterMode,
   type CardDrawerState,
   buildVisibleBoard,
   cloneBoard,
   findCardLocation,
   getCardsForView,
   formatDateTimeShort,
+  sortCardsByPriority,
 } from './admissionsUtils';
 
 interface Props {
   patients: Patient[];
+  initialBoard: AdmissionsBoard;
+  focusPatientId?: string | null;
+  admissionsSettings?: AdmissionsSettingsData;
   onToast: (message: string, type: 'success' | 'error' | 'info') => void;
   onClose: () => void;
+  onSaveAdmissionsSettings: (settings: AdmissionsSettingsData) => Promise<void>;
   onOpenPatient: (
     patientId: string,
     options?: { tab?: 'overview' | 'notes' | 'chat' | 'sessions'; freshSession?: boolean }
   ) => void;
 }
 
-export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, onOpenPatient }) => {
-  const [board, setBoard] = useState<AdmissionsBoard | null>(null);
-  const [loading, setLoading] = useState(true);
+export const AdmissionsPage: React.FC<Props> = ({
+  patients,
+  initialBoard,
+  focusPatientId,
+  admissionsSettings,
+  onToast,
+  onClose,
+  onSaveAdmissionsSettings,
+  onOpenPatient,
+}) => {
+  const [board, setBoard] = useState<AdmissionsBoard>(() => cloneBoard(initialBoard));
   const [saving, setSaving] = useState(false);
   const [boardSearch, setBoardSearch] = useState('');
-  const [filterMode, setFilterMode] = useState<BoardFilterMode>('all');
   const [now, setNow] = useState(Date.now());
   const [renamingColumnId, setRenamingColumnId] = useState<string | null>(null);
   const [renameColumnValue, setRenameColumnValue] = useState('');
@@ -66,8 +85,10 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
   const [tagInput, setTagInput] = useState('');
   const [doctorInput, setDoctorInput] = useState('');
   const [activeDragCard, setActiveDragCard] = useState<AdmissionsCard | null>(null);
+  const [manualOrderOverrides, setManualOrderOverrides] = useState<Record<string, boolean>>({});
   // Pass 1 state
-  const [currentView, setCurrentView] = useState<AdmissionsViewMode>('board');
+  const [currentView, setCurrentView] = useState<AdmissionsViewMode>(admissionsSettings?.defaultView || 'board');
+  const [hiddenWardIds, setHiddenWardIds] = useState<string[]>(admissionsSettings?.hiddenWardIds || []);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showMoveToModal, setShowMoveToModal] = useState(false);
   const [moveToCardId, setMoveToCardId] = useState<string | null>(null);
@@ -75,8 +96,9 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
   const [triageColorCardId, setTriageColorCardId] = useState<string | null>(null);
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
   const [localBoardVersion, setLocalBoardVersion] = useState<number>(0);
-  const [loadingMessage, setLoadingMessage] = useState('Loading admissions board...');
-  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [hidingWardId, setHidingWardId] = useState<string | null>(null);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const lastFocusedPatientRef = useRef<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -109,52 +131,47 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
       .slice(0, 12);
   }, [board?.columns, newCardSearch, patients]);
 
+  const visibleColumns = useMemo(
+    () => board.columns.filter((column) => !hiddenWardIds.includes(column.id)),
+    [board.columns, hiddenWardIds]
+  );
+
+  const boardWithVisibleColumns = useMemo(
+    () => ({ ...board, columns: visibleColumns }),
+    [board, visibleColumns]
+  );
+
   const visibleBoard = useMemo(() => {
-    if (!board) return null;
-    return buildVisibleBoard(board, boardSearch, filterMode, patientIdNumberLookup);
-  }, [board, boardSearch, filterMode, patientIdNumberLookup]);
+    return buildVisibleBoard(boardWithVisibleColumns, boardSearch, 'all', patientIdNumberLookup);
+  }, [boardSearch, boardWithVisibleColumns, patientIdNumberLookup]);
+
+  const renderedBoard = useMemo(() => {
+    if (!visibleBoard) return null;
+    return {
+      ...visibleBoard,
+      columns: visibleBoard.columns.map((column) => (
+        manualOrderOverrides[column.id]
+          ? column
+          : { ...column, cards: sortCardsByPriority(column.cards) }
+      )),
+    };
+  }, [manualOrderOverrides, visibleBoard]);
 
   useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    setLoadingProgress(0);
-    
-    // Simulate loading stages
-    const progressInterval = window.setInterval(() => {
-      setLoadingProgress((p) => Math.min(p + Math.random() * 30, 85));
-    }, 200);
+    setBoard(cloneBoard(initialBoard));
+    setLocalBoardVersion(initialBoard.version);
+    primeAdmissionsBoard(initialBoard);
+  }, [initialBoard]);
 
-    setLoadingMessage('Loading admissions board...');
-    
-    fetchAdmissionsBoard()
-      .then((response) => {
-        if (mounted) {
-          setBoard(response.board);
-          setLocalBoardVersion(response.board.version);
-          setLoadingProgress(100);
-          setLoadingMessage('Ready');
-        }
-      })
-      .catch((error) => {
-        if (mounted) {
-          onToast(error instanceof Error ? error.message : 'Failed to load admissions board.', 'error');
-          setLoading(false);
-        }
-      })
-      .finally(() => {
-        if (mounted) {
-          window.clearInterval(progressInterval);
-          setTimeout(() => {
-            if (mounted) setLoading(false);
-          }, 300);
-        }
-      });
-    
-    return () => {
-      mounted = false;
-      window.clearInterval(progressInterval);
-    };
-  }, [onToast]);
+  useEffect(() => {
+    setCurrentView(admissionsSettings?.defaultView || 'board');
+    setHiddenWardIds(admissionsSettings?.hiddenWardIds || []);
+  }, [admissionsSettings?.defaultView, admissionsSettings?.hiddenWardIds]);
+
+  useEffect(() => {
+    const allowedIds = new Set(board.columns.map((column) => column.id));
+    setHiddenWardIds((current) => current.filter((id) => allowedIds.has(id)));
+  }, [board.columns]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -178,6 +195,20 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
     setDoctorInput('');
   };
 
+  useEffect(() => {
+    if (!focusPatientId || focusPatientId === lastFocusedPatientRef.current) return;
+    if (drawerState) return;
+
+    for (const column of board.columns) {
+      const card = column.cards.find((item) => item.patientId === focusPatientId);
+      if (card) {
+        openCardDrawer(column.id, card.id);
+        lastFocusedPatientRef.current = focusPatientId;
+        break;
+      }
+    }
+  }, [board.columns, drawerState, focusPatientId]);
+
   const closeDrawer = () => {
     setDrawerState(null);
     setDrawerDraft(null);
@@ -189,22 +220,33 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
   const persistBoard = async (nextBoard: AdmissionsBoard) => {
     setBoard(nextBoard);
     setLocalBoardVersion(nextBoard.version);
-    setSaving(true);
-    try {
-      const response = await saveAdmissionsBoard(nextBoard);
-      setBoard(response.board);
-      setLocalBoardVersion(response.board.version);
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 409) {
-        // Show conflict dialog (Option B: prompt user)
-        setConflictDialogOpen(true);
-      } else {
-        onToast(error instanceof Error ? error.message : 'Failed to save admissions board.', 'error');
+
+    const queuedSave = saveQueueRef.current.then(async () => {
+      setSaving(true);
+      try {
+        const response = await saveAdmissionsBoard(nextBoard);
+        setBoard(response.board);
+        setLocalBoardVersion(response.board.version);
+        primeAdmissionsBoard(response.board);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 409) {
+          // Show conflict dialog (Option B: prompt user)
+          setConflictDialogOpen(true);
+        } else {
+          onToast(error instanceof Error ? error.message : 'Failed to save admissions board.', 'error');
+        }
+      } finally {
+        setSaving(false);
       }
-    } finally {
-      setSaving(false);
-    }
+    });
+
+    saveQueueRef.current = queuedSave.catch(() => undefined);
+    await queuedSave;
   };
+
+  const waitForPendingSaves = useCallback(async () => {
+    await saveQueueRef.current;
+  }, []);
 
   const handleConflictKeepLocal = () => {
     setConflictDialogOpen(false);
@@ -218,6 +260,7 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
       const latest = await fetchAdmissionsBoard();
       setBoard(latest.board);
       setLocalBoardVersion(latest.board.version);
+      primeAdmissionsBoard(latest.board);
       closeDrawer();
       onToast('Reloaded the latest admissions board.', 'info');
     } catch (error) {
@@ -349,6 +392,27 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
     await persistBoard(nextBoard);
   };
 
+  const handleHideWard = async (columnId: string) => {
+    setHidingWardId(columnId);
+    try {
+      const isHidden = hiddenWardIds.includes(columnId);
+      const newHiddenWardIds = isHidden
+        ? hiddenWardIds.filter((id) => id !== columnId)
+        : [...hiddenWardIds, columnId];
+      await onSaveAdmissionsSettings({
+        defaultView: currentView,
+        hiddenWardIds: newHiddenWardIds,
+        staffTriageColors: admissionsSettings?.staffTriageColors,
+      });
+      setHiddenWardIds(newHiddenWardIds);
+      onToast(isHidden ? 'Ward unhidden' : 'Ward hidden', 'success');
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : 'Failed to hide ward', 'error');
+    } finally {
+      setHidingWardId(null);
+    }
+  };
+
   const handleOpenAddPatient = (columnId: string) => {
     setNewCardColumnId(columnId);
     setNewCardPatientId('');
@@ -457,6 +521,13 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
     const [movedCard] = sourceColumn.cards.splice(activeLocation.cardIndex, 1);
     if (!movedCard) return;
 
+    const markManualOrder = (columnId: string) => {
+      setManualOrderOverrides((current) => ({
+        ...current,
+        [columnId]: true,
+      }));
+    };
+
     let targetColumnIndex = -1;
     let targetCardIndex = 0;
 
@@ -525,42 +596,34 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
       movedCard.enteredColumnAt = nowIso;
       movedCard.updatedAt = nowIso;
       movedCard.movementHistory = updatedHistory;
+      markManualOrder(sourceColumn.id);
+      markManualOrder(targetColumn.id);
+    } else {
+      markManualOrder(targetColumn.id);
     }
 
     targetColumn.cards.splice(targetCardIndex, 0, movedCard);
     await persistBoard(nextBoard);
   };
 
-  if (loading) {
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-50">
-        {/* Top progress bar */}
-        <div className="fixed top-0 left-0 right-0 h-1 bg-slate-200 z-50">
-          <div
-            className="h-full bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-500 transition-all duration-300 ease-out"
-            style={{ width: `${loadingProgress}%` }}
-          />
-        </div>
+  const hiddenWardsWithPatients = useMemo(
+    () =>
+      board.columns
+        .filter((column) => hiddenWardIds.includes(column.id) && column.cards.length > 0)
+        .map((column) => ({ id: column.id, title: column.title, patientCount: column.cards.length })),
+    [board.columns, hiddenWardIds]
+  );
 
-        {/* Spinner and message */}
-        <div className="flex flex-col items-center gap-6 max-w-md">
-          {/* Animated spinner */}
-          <div className="relative w-12 h-12">
-            <div className="absolute inset-0 rounded-full border-2 border-slate-200" />
-            <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-500 border-r-cyan-500 animate-spin" />
-          </div>
+  const hiddenPatientCount = useMemo(
+    () => hiddenWardsWithPatients.reduce((total, column) => total + column.patientCount, 0),
+    [hiddenWardsWithPatients]
+  );
 
-          {/* Loading text and progress */}
-          <div className="text-center">
-            <p className="text-sm font-medium text-slate-700">{loadingMessage}</p>
-            <p className="mt-1.5 text-xs text-slate-400">{Math.floor(loadingProgress)}% complete</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const primaryAddColumnId = useMemo(() => {
+    return visibleColumns[0]?.id || board.columns[0]?.id || '';
+  }, [board.columns, visibleColumns]);
 
-  if (!board || !visibleBoard) {
+  if (!visibleBoard || !renderedBoard) {
     return (
       <div className="flex h-full items-center justify-center bg-slate-50 text-sm text-slate-400">
         Unable to load the admissions board.
@@ -574,15 +637,36 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
         onBack={onClose}
         boardSearch={boardSearch}
         onBoardSearchChange={setBoardSearch}
-        filterMode={filterMode}
-        onFilterModeChange={setFilterMode}
         saving={saving}
         updatedAt={board.updatedAt}
         currentView={currentView}
         onViewChange={setCurrentView}
-        onAddPatient={() => handleOpenAddPatient(board.columns[0]?.id || '')}
+        onAddPatient={() => handleOpenAddPatient(primaryAddColumnId)}
         onSettingsClick={() => setShowSettingsModal(true)}
       />
+
+      {hiddenWardsWithPatients.length > 0 && (
+        <div className="mx-3 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 md:mx-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold">⚠️ Hidden ward alert</span>
+            <span>
+              {hiddenPatientCount} patient{hiddenPatientCount === 1 ? '' : 's'} currently in hidden wards:
+            </span>
+            <span className="font-medium">
+              {hiddenWardsWithPatients
+                .map((column) => `${column.title} (${column.patientCount})`)
+                .join(', ')}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowSettingsModal(true)}
+              className="ml-auto rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+            >
+              Review settings
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Render appropriate view based on currentView */}
       {currentView === 'board' ? (
@@ -594,9 +678,9 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
             onDragEnd={(e: DragEndEvent) => void handleDragEnd(e)}
             onDragCancel={() => setActiveDragCard(null)}
           >
-            <SortableContext items={board.columns.map((column) => column.id)} strategy={horizontalListSortingStrategy}>
+            <SortableContext items={renderedBoard.columns.map((column) => column.id)} strategy={horizontalListSortingStrategy}>
               <div className="flex h-full min-w-max snap-x snap-mandatory items-start gap-3 pb-4 md:gap-6">
-                {visibleBoard.columns.map((column) => {
+                {renderedBoard.columns.map((column) => {
                   const originalColumn = board.columns.find((item) => item.id === column.id) || column;
                   return (
                     <AdmissionsColumn
@@ -623,6 +707,15 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
                         setShowTriageColorPicker(true);
                       }}
                       patientIdNumberLookup={patientIdNumberLookup}
+                      isUnsorted={Boolean(manualOrderOverrides[column.id])}
+                      onClearManualOrder={() => {
+                        setManualOrderOverrides((current) => ({
+                          ...current,
+                          [column.id]: false,
+                        }));
+                      }}
+                      onHideWard={() => void handleHideWard(column.id)}
+                      isHidingWard={hidingWardId === column.id}
                     />
                   );
                 })}
@@ -667,10 +760,10 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
         </div>
       ) : (
         <TodayView
-          cards={getCardsForView(board, currentView)}
+          cards={getCardsForView(boardWithVisibleColumns, currentView)}
           onCardClick={(cardId) => {
-            const loc = findCardLocation(board, cardId);
-            if (loc) openCardDrawer(board.columns[loc.columnIndex].id, cardId);
+            const loc = findCardLocation(boardWithVisibleColumns, cardId);
+            if (loc) openCardDrawer(boardWithVisibleColumns.columns[loc.columnIndex].id, cardId);
           }}
           onMoveToClick={(cardId) => {
             setMoveToCardId(cardId);
@@ -719,7 +812,12 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
           setTaskInput={setTaskInput}
           setTagInput={setTagInput}
           setDoctorInput={setDoctorInput}
-          onOpenPatient={onOpenPatient}
+          onOpenPatient={(patientId, options) => {
+            void (async () => {
+              await waitForPendingSaves();
+              onOpenPatient(patientId, options);
+            })();
+          }}
         />
       )}
 
@@ -758,9 +856,35 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onClose, on
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
         defaultView={currentView}
-        onDefaultViewChange={(view) => {
-          setCurrentView(view);
-          setShowSettingsModal(false);
+        columns={board.columns}
+        hiddenColumnIds={hiddenWardIds}
+        onSave={({ defaultView, orderedColumnIds, hiddenColumnIds }) => {
+          setCurrentView(defaultView);
+
+          const allowedIds = new Set(board.columns.map((column) => column.id));
+          const nextHiddenIds = hiddenColumnIds.filter((id) => allowedIds.has(id));
+          setHiddenWardIds(nextHiddenIds);
+          void onSaveAdmissionsSettings({
+            ...(admissionsSettings || {}),
+            defaultView,
+            hiddenWardIds: nextHiddenIds,
+          }).catch((error) => {
+            onToast(error instanceof Error ? error.message : 'Failed to save admissions settings.', 'error');
+          });
+
+          const currentOrder = board.columns.map((column) => column.id);
+          const ordered = orderedColumnIds.filter((id) => allowedIds.has(id));
+          const remaining = currentOrder.filter((id) => !ordered.includes(id));
+          const nextOrder = [...ordered, ...remaining];
+
+          if (nextOrder.join('|') === currentOrder.join('|')) return;
+
+          const nextBoard = cloneBoard(board);
+          const byId = new Map(nextBoard.columns.map((column) => [column.id, column]));
+          nextBoard.columns = nextOrder
+            .map((id) => byId.get(id))
+            .filter(Boolean) as AdmissionsBoard['columns'];
+          void persistBoard(nextBoard);
         }}
       />
 

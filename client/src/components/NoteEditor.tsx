@@ -10,6 +10,7 @@ interface NoteEditorProps {
   onEditModeChange: (mode: 'write' | 'preview') => void;
   status: AppStatus;
   onSave: () => void;
+  onDiscard: () => void;
 }
 
 function renderMarkdown(text: string) {
@@ -37,6 +38,7 @@ function renderMarkdown(text: string) {
 
 export const NoteEditor: React.FC<NoteEditorProps> = ({
   noteContent, onNoteContentChange, editMode, onEditModeChange, status, onSave,
+  onDiscard,
 }) => {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -71,7 +73,10 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
           <div className="prose prose-sm prose-slate max-w-none">{renderMarkdown(noteContent)}</div>
         </div>
       )}
-      <div className="shrink-0 bg-slate-50 border-t border-slate-200 p-4 flex justify-start">
+      <div className="shrink-0 bg-slate-50 border-t border-slate-200 p-4 flex justify-start gap-3">
+        <button onClick={onDiscard} disabled={!noteContent} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-6 py-2 font-medium text-slate-600 transition-all hover:bg-slate-100 disabled:opacity-50">
+          Discard
+        </button>
         <button onClick={onSave} disabled={status === AppStatus.FILING || status === AppStatus.SAVING || !noteContent} className="flex items-center gap-2 bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 disabled:opacity-50 font-medium transition-all shadow-sm">
           <Save className="w-4 h-4" /> {status === AppStatus.FILING ? 'Filing...' : 'Save Note'}
         </button>

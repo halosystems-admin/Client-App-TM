@@ -3,7 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { AdmissionsCard, TriageColor } from '../../../../shared/types';
 import { Clock3, GripVertical, ChevronRight } from 'lucide-react';
-import { formatTimeInStage } from './admissionsUtils';
+import { formatTimeInStage, getOpenTaskCount, getTaskSummary } from './admissionsUtils';
 
 interface Props {
   card: AdmissionsCard;
@@ -42,6 +42,7 @@ export const AdmissionsPatientCard: React.FC<Props> = ({ card, now, idNumber, on
   };
 
   const completedTasks = card.tasks.filter((task) => task.done).length;
+  const openTasks = getOpenTaskCount(card);
   const triageColor = card.triageColor || 'gray';
   const colorStyles = TRIAGE_COLOR_MAP[triageColor];
 
@@ -118,8 +119,8 @@ export const AdmissionsPatientCard: React.FC<Props> = ({ card, now, idNumber, on
           )}
 
           <div className="mt-3 flex w-full items-center justify-between border-t border-slate-100 pt-2.5 text-[11px] text-slate-400">
-            <span className="font-medium text-cyan-600">
-              {card.tasks.length > 0 ? `${completedTasks}/${card.tasks.length} tasks` : 'No tasks'}
+            <span className={`font-medium ${openTasks > 0 ? 'text-cyan-700' : 'text-slate-500'}`}>
+              {getTaskSummary(card)}
             </span>
             {onMoveClick && (
               <button
@@ -187,7 +188,7 @@ export const AdmissionsPatientCardPreview: React.FC<{
         )}
       </div>
       <div className="mt-2 border-t border-slate-100 pt-2 text-[11px] font-medium text-cyan-600">
-        {card.tasks.length > 0 ? `${completedTasks}/${card.tasks.length} tasks` : 'No tasks'}
+        {card.tasks.length > 0 ? `${card.tasks.length - completedTasks}/${card.tasks.length} tasks complete` : 'No tasks'}
       </div>
     </div>
   );

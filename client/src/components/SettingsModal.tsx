@@ -30,6 +30,7 @@ interface Props {
   onSave: (settings: UserSettings) => Promise<void>;
   userEmail?: string;
   userId?: string;
+  notesUserId?: string;
   notesApiAvailable?: boolean;
   loginTime: number;
   initialTab?: SettingsModalTab;
@@ -106,6 +107,7 @@ export const SettingsModal: React.FC<Props> = ({
   onSave,
   userEmail,
   userId,
+  notesUserId,
   notesApiAvailable,
   loginTime,
   initialTab,
@@ -433,14 +435,27 @@ export const SettingsModal: React.FC<Props> = ({
                         </div>
                       </div>
 
-                      {userId && (
+                      {(userId || notesUserId) && (
                         <>
                           <SectionLabel className="mt-7">Account</SectionLabel>
                           <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-black/[0.04]">
-                            <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5">
-                              <span className="text-[15px] text-[#1c1c1e]">Notes User ID</span>
-                              <span className="text-[13px] font-mono text-[#8e8e93]">{userId}</span>
-                            </div>
+                            {notesUserId ? (
+                              <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5">
+                                <span className="text-[15px] text-[#1c1c1e]">Notes User ID (Provisioned)</span>
+                                <span className="text-[13px] font-mono text-[#8e8e93]">{notesUserId}</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5">
+                                <span className="text-[15px] text-[#1c1c1e]">Notes User ID (Provisioned)</span>
+                                <span className="text-[13px] text-[#8e8e93]">Not provisioned</span>
+                              </div>
+                            )}
+                            {userId && (
+                              <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5 border-t border-[#c6c6c8]/30">
+                                <span className="text-[15px] text-[#1c1c1e]">Google Account ID</span>
+                                <span className="text-[13px] font-mono text-[#8e8e93]">{userId}</span>
+                              </div>
+                            )}
                           </div>
                         </>
                       )}
@@ -550,7 +565,7 @@ export const SettingsModal: React.FC<Props> = ({
                             Select a template, choose or type clinical input, and generate a test note.
                           </p>
                         </div>
-                        <TemplatePlayground userId={userId || 'demo'} />
+                        <TemplatePlayground />
                       </div>
                     )}
                   </div>

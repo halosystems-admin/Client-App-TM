@@ -5,6 +5,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import {
+  ArrowLeft,
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
@@ -422,6 +423,17 @@ export const CalendarPage: React.FC<Props> = ({
       <div className="border-b border-[#dceaf2] bg-white/92 backdrop-blur-sm">
         <div className="mx-auto flex w-full max-w-[1500px] flex-wrap items-center justify-between gap-4 px-5 py-5 md:px-8">
           <div className="flex items-center gap-4">
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#d8e7ef] bg-white text-slate-500 transition hover:border-[#b8dced] hover:bg-[#eef8fc] hover:text-[#2f8daf]"
+                aria-label="Back to workspace"
+                title="Back"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            )}
             <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-[linear-gradient(180deg,#ebf9fd_0%,#dff4fb_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
               <CalendarIcon className="text-[#2fa7c8]" size={24} />
             </div>
@@ -454,16 +466,6 @@ export const CalendarPage: React.FC<Props> = ({
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-[#55a9d3]" />
                 Refreshing
               </div>
-            )}
-            {onClose && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[#d8e7ef] bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
-              >
-                <X className="h-3.5 w-3.5" />
-                Close
-              </button>
             )}
           </div>
         </div>

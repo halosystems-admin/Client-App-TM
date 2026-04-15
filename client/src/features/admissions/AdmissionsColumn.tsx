@@ -3,7 +3,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { AdmissionsColumn as AdmissionsColumnType } from '../../../../shared/types';
-import { GripVertical, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
+import { GripVertical, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { AdmissionsPatientCard } from './AdmissionsPatientCard';
 
 function EmptyColumnDropZone({ columnId }: { columnId: string }) {
@@ -41,6 +41,10 @@ interface Props {
   onMoveCard?: (cardId: string) => void;
   onTriageColorClick?: (cardId: string) => void;
   patientIdNumberLookup: (patientId: string) => string | undefined;
+  isUnsorted?: boolean;
+  onClearManualOrder?: () => void;
+  onHideWard?: () => void;
+  isHidingWard?: boolean;
 }
 
 export const AdmissionsColumn: React.FC<Props> = ({
@@ -57,6 +61,10 @@ export const AdmissionsColumn: React.FC<Props> = ({
   onMoveCard,
   onTriageColorClick,
   patientIdNumberLookup,
+  isUnsorted = false,
+  onClearManualOrder,
+  onHideWard,
+  isHidingWard = false,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -101,9 +109,22 @@ export const AdmissionsColumn: React.FC<Props> = ({
               <p className="truncate text-[12px] font-bold uppercase tracking-[0.14em] text-slate-800">
                 {column.title}
               </p>
-              <p className="mt-0.5 text-[13px] text-slate-500">
-                {column.cards.length} patient{column.cards.length === 1 ? '' : 's'}
-              </p>
+              <div className="mt-0.5 flex items-center gap-2 text-[13px] text-slate-500">
+                <p>
+                  {column.cards.length} patient{column.cards.length === 1 ? '' : 's'}
+                </p>
+                {isUnsorted && (
+                  <button
+                    type="button"
+                    onClick={onClearManualOrder}
+                    className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100"
+                    title="Reapply smart sort"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    Unsorted
+                  </button>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -163,6 +184,29 @@ export const AdmissionsColumn: React.FC<Props> = ({
                     <Pencil className="h-3.5 w-3.5" />
                     Rename ward
                   </button>
+                  {onHideWard && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={isHidingWard}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
+                        isHidingWard
+                          ? 'cursor-wait text-slate-400'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onHideWard();
+                      }}
+                    >
+                      {isHidingWard ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <EyeOff className="h-3.5 w-3.5" />
+                      )}
+                      {isHidingWard ? 'Hiding...' : 'Hide ward'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     role="menuitem"

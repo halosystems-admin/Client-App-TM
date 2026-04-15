@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { TemplateItem } from '../../../../shared/types';
+import { ApiError } from '../../services/api';
+import { getTemplates } from '../../services/api';
 
 function normalizeTemplates(raw: unknown): TemplateItem[] {
   const str = (v: unknown): string | undefined =>
@@ -39,61 +41,17 @@ export function CustomTemplates() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchDemoTemplates = async () => {
+  const fetchTemplates = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_NOTES_API_URL ?? '';
-      const cleanApiUrl = apiUrl.replace(/\/$/, '');
-      const requestUrl = `${cleanApiUrl}/get_templates`;
-
-      console.log('DEBUG: Exact URL being called:', requestUrl);
-
-      const response = await fetch(requestUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ user_id: 'demo' }),
-      });
-
-      const rawText = await response.text();
-      console.log('DEBUG - RAW SERVER RESPONSE:', rawText);
-
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status} - ${rawText}`);
-      }
-
-      if (!rawText || rawText === 'null' || rawText.trim() === '') {
-        console.log('DEBUG: User has no templates (empty response).');
-        setTemplates([]);
-        return;
-      }
-
-      const data = JSON.parse(rawText);
-      console.log('DEBUG: Parsed data from DB:', data);
-
-      let templatesArray: TemplateItem[] = [];
-
-      if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
-        for (const [key, value] of Object.entries(data)) {
-          if (typeof value === 'object' && value !== null) {
-            const v = value as Record<string, unknown>;
-            templatesArray.push({
-              id: key,
-              name: (v.name as string) || key.replace(/_/g, ' ').toUpperCase(),
-              description: (v.description as string) || '',
-              ...v,
-            } as TemplateItem);
-          }
-        }
-      } else if (Array.isArray(data)) {
-        templatesArray = data as TemplateItem[];
-      }
-
-      console.log('DEBUG: Final Templates Array for UI:', templatesArray);
+      const templatesArray = await getTemplates();
       setTemplates(templatesArray);
     } catch (err) {
       console.error('Fetch Error:', err);
-      setError('Could not load templates. See console for details.');
+      if (err instanceof ApiError && err.status === 401) {
+        setError('Session expired. Please sign in again to load templates.');
+      } else {
+        setError('Could not load templates. See console for details.');
+      }
       setTemplates([]);
     } finally {
       setLoading(false);
@@ -103,7 +61,7 @@ export function CustomTemplates() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetchDemoTemplates();
+    fetchTemplates();
   }, []);
 
   if (loading) {
@@ -126,7 +84,7 @@ export function CustomTemplates() {
   if (templates.length === 0) {
     return (
       <p className="text-sm text-slate-500 p-4">
-        No templates found for the demo account.
+        No templates found for your account.
       </p>
     );
   }
