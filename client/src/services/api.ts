@@ -7,6 +7,8 @@ import type {
   TemplateItem,
   TemplateListResponse,
   GenerateNoteParams,
+  AdmissionsBoard,
+  CalendarEvent,
 } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -129,6 +131,16 @@ interface FilesResponse {
   files: DriveFile[];
   nextPage: string | null;
 }
+
+export const fetchFilesFirstPage = async (
+  patientId: string,
+  pageSize = 100
+): Promise<{ files: DriveFile[]; nextPage: string | null }> => {
+  const data = await request<FilesResponse>(
+    `/api/drive/patients/${patientId}/files?pageSize=${pageSize}`
+  );
+  return { files: data.files || [], nextPage: data.nextPage ?? null };
+};
 
 export const fetchFiles = async (patientId: string): Promise<DriveFile[]> => {
   const all: DriveFile[] = [];
@@ -417,6 +429,35 @@ export const saveSettings = (settings: UserSettings) =>
 
 // --- CALENDAR ---
 
+export const fetchTodayEvents = () =>
+  request<{ events: CalendarEvent[] }>('/api/calendar/today');
+
+export const fetchEventsInRange = (
+  startIso: string,
+  endIso: string,
+  timeZone?: string
+) => {
+  const params = new URLSearchParams({ start: startIso, end: endIso });
+  if (timeZone) params.set('timeZone', timeZone);
+  return request<{ events: CalendarEvent[] }>(`/api/calendar/events?${params.toString()}`);
+};
+
+export const fetchCalendarEvent = (id: string) =>
+  request<{ event: CalendarEvent }>(`/api/calendar/events/${encodeURIComponent(id)}`);
+
+export interface CalendarEventCreatePayload {
+  title: string;
+  description?: string;
+  start: string;
+  end: string;
+  timeZone?: string;
+  location?: string;
+  patientId?: string;
+  attachmentFileIds?: string[];
+}
+
+export type CalendarEventUpdatePayload = Partial<CalendarEventCreatePayload>;
+
 export interface CalendarEventDto {
   id: string;
   summary?: string;
@@ -443,20 +484,73 @@ export const fetchCalendarEvents = async (params: {
   return data.events;
 };
 
-export const createCalendarEvent = async (payload: {
+export function createCalendarEvent(payload: CalendarEventCreatePayload): Promise<{ event: CalendarEvent }>;
+export function createCalendarEvent(payload: {
   summary: string;
   description?: string;
   startDateTime: string;
   endDateTime: string;
   timeZone?: string;
   location?: string;
-}): Promise<CalendarEventDto> => {
-  const data = await request<{ event: CalendarEventDto }>('/api/calendar/events', {
+}): Promise<CalendarEventDto>;
+export async function createCalendarEvent(
+  payload: CalendarEventCreatePayload | {
+    summary: string;
+    description?: string;
+    startDateTime: string;
+    endDateTime: string;
+    timeZone?: string;
+    location?: string;
+  }
+): Promise<{ event: CalendarEvent } | CalendarEventDto> {
+  const isLegacy = 'summary' in payload && 'startDateTime' in payload;
+  if (isLegacy) {
+    const data = await request<{ event: CalendarEventDto }>('/api/calendar/events', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return data.event;
+  }
+
+  return request<{ event: CalendarEvent }>('/api/calendar/events', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  return data.event;
-};
+}
+
+export const updateCalendarEvent = (id: string, payload: CalendarEventUpdatePayload) =>
+  request<{ event: CalendarEvent }>(`/api/calendar/events/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+
+export const deleteCalendarEvent = (id: string) =>
+  request<void>(`/api/calendar/events/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+
+export const updateCalendarEventAttachments = (id: string, fileIds: string[]) =>
+  request<{ event: CalendarEvent }>(`/api/calendar/events/${encodeURIComponent(id)}/attachments`, {
+    method: 'POST',
+    body: JSON.stringify({ fileIds }),
+  });
+
+export const generatePrepNote = (patientId: string, patientName: string) =>
+  request<{ prepNote: string }>('/api/calendar/prep-note', {
+    method: 'POST',
+    body: JSON.stringify({ patientId, patientName }),
+  });
+
+// --- ADMISSIONS ---
+
+export const fetchAdmissionsBoard = () =>
+  request<{ board: AdmissionsBoard }>('/api/drive/admissions-board');
+
+export const saveAdmissionsBoard = (board: AdmissionsBoard) =>
+  request<{ board: AdmissionsBoard }>('/api/drive/admissions-board', {
+    method: 'PUT',
+    body: JSON.stringify(board),
+  });
 
 // --- UTILS ---
 function fileToBase64(file: File): Promise<string> {

@@ -1,8 +1,69 @@
-import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import { config } from '../config';
 
+// Polyfill browser APIs needed by pdf-parse (set up at module load time)
+// These are needed because pdf-parse's dependency pdfjs-dist uses them at module load
+const g = globalThis as any;
+
+if (typeof g.DOMMatrix === 'undefined') {
+  // Minimal DOMMatrix polyfill for Node.js
+  g.DOMMatrix = class DOMMatrix {
+    constructor(init?: string | number[]) {
+      if (init) {
+        if (typeof init === 'string') {
+          const values = init.match(/matrix\(([^)]+)\)/)?.[1]?.split(',').map(Number) || [];
+          this.a = values[0] ?? 1;
+          this.b = values[1] ?? 0;
+          this.c = values[2] ?? 0;
+          this.d = values[3] ?? 1;
+          this.e = values[4] ?? 0;
+          this.f = values[5] ?? 0;
+        }
+      } else {
+        this.a = 1;
+        this.b = 0;
+        this.c = 0;
+        this.d = 1;
+        this.e = 0;
+        this.f = 0;
+      }
+    }
+    a = 1;
+    b = 0;
+    c = 0;
+    d = 1;
+    e = 0;
+    f = 0;
+  };
+}
+if (typeof g.ImageData === 'undefined') {
+  g.ImageData = class ImageData {
+    constructor(public data: Uint8ClampedArray, public width: number, public height?: number) {}
+  };
+}
+if (typeof g.Path2D === 'undefined') {
+  g.Path2D = class Path2D {};
+}
+
 const { driveApi, uploadApi } = config;
+
+const DRIVE_REQUEST_TIMEOUT_MS = 25_000;
+
+/** fetch with timeout to avoid hanging on slow/hung Drive API */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = DRIVE_REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 // --- Types ---
 
@@ -35,14 +96,18 @@ export interface DriveFileRaw {
  * Throws on non-2xx responses so callers don't silently consume errors.
  */
 export async function driveRequest(token: string, path: string, options: RequestInit = {}): Promise<DriveResponse> {
-  const res = await fetch(`${driveApi}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string> || {}),
+  const res = await fetchWithTimeout(
+    `${driveApi}${path}`,
+    {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(options.headers as Record<string, string> || {}),
+      },
     },
-  });
+    DRIVE_REQUEST_TIMEOUT_MS
+  );
 
   const data = (await res.json()) as DriveResponse;
 
@@ -172,6 +237,72 @@ export async function uploadToDrive(
 }
 
 /**
+ * Convert a DOCX buffer into a PDF buffer via a temporary Google Doc import.
+ * The temporary Google Doc is always cleaned up before returning.
+ */
+export async function convertDocxBufferToPdfBuffer(
+  token: string,
+  docxBuffer: Buffer,
+  parentFolderId: string,
+  baseName: string
+): Promise<Buffer> {
+  const importMetadata = JSON.stringify({
+    name: `${baseName}_preview_import`,
+    parents: [parentFolderId],
+    mimeType: 'application/vnd.google-apps.document',
+  });
+
+  const boundary = `halo_preview_${crypto.randomUUID()}`;
+  const importBody = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${importMetadata}\r\n` +
+        `--${boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\r\n\r\n`
+    ),
+    docxBuffer,
+    Buffer.from(`\r\n--${boundary}--`),
+  ]);
+
+  const importRes = await fetch(`${uploadApi}/files?uploadType=multipart`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+    },
+    body: importBody,
+  });
+
+  if (!importRes.ok) {
+    const importError = await importRes.text().catch(() => 'Unknown import error');
+    throw new Error(`[Drive ${importRes.status}] Failed to import DOCX as Google Doc: ${importError}`);
+  }
+
+  const importedDoc = (await importRes.json()) as { id: string };
+
+  try {
+    const pdfRes = await fetch(
+      `${driveApi}/files/${importedDoc.id}/export?mimeType=application/pdf`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!pdfRes.ok) {
+      const exportError = await pdfRes.text().catch(() => 'Unknown export error');
+      throw new Error(`[Drive ${pdfRes.status}] Failed to export preview PDF: ${exportError}`);
+    }
+
+    return Buffer.from(await pdfRes.arrayBuffer());
+  } finally {
+    try {
+      await fetch(`${driveApi}/files/${importedDoc.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (cleanupErr) {
+      console.error(`[Drive] Failed to delete temp preview doc ${importedDoc.id}:`, cleanupErr);
+    }
+  }
+}
+
+/**
  * Download a file's text content from Google Drive.
  */
 export async function downloadTextFromDrive(token: string, fileId: string): Promise<string> {
@@ -182,6 +313,97 @@ export async function downloadTextFromDrive(token: string, fileId: string): Prom
     throw new Error(`[Drive ${res.status}] Failed to download text for file ${fileId}`);
   }
   return res.text();
+}
+
+export async function findFileInFolder(
+  token: string,
+  parentFolderId: string,
+  fileName: string,
+  mimeType?: string
+): Promise<DriveFileRaw | null> {
+  const clauses = [
+    `'${parentFolderId}' in parents`,
+    `name='${fileName.replace(/'/g, "\\'")}'`,
+    'trashed=false',
+  ];
+  if (mimeType) {
+    clauses.push(`mimeType='${mimeType.replace(/'/g, "\\'")}'`);
+  }
+  const query = encodeURIComponent(clauses.join(' and '));
+  const data = await driveRequest(
+    token,
+    `/files?q=${query}&fields=files(id,name,mimeType,appProperties,createdTime,modifiedTime)`
+  );
+  return data.files && data.files.length > 0 ? data.files[0] : null;
+}
+
+export async function upsertTextFileInFolder(
+  token: string,
+  parentFolderId: string,
+  fileName: string,
+  content: string,
+  mimeType = 'text/plain',
+  appProperties?: Record<string, string>
+): Promise<string> {
+  const existing = await findFileInFolder(token, parentFolderId, fileName);
+
+  if (existing) {
+    const res = await fetch(`${uploadApi}/files/${existing.id}?uploadType=media`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': mimeType,
+      },
+      body: content,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Unknown update error');
+      throw new Error(`[Drive ${res.status}] Failed to update "${fileName}": ${errText}`);
+    }
+
+    if (appProperties) {
+      await driveRequest(token, `/files/${existing.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ appProperties }),
+      });
+    }
+
+    return existing.id;
+  }
+
+  const buffer = Buffer.from(content, 'utf-8');
+  return uploadToDrive(token, fileName, mimeType, parentFolderId, buffer, appProperties);
+}
+
+export async function upsertJsonFileInFolder(
+  token: string,
+  parentFolderId: string,
+  fileName: string,
+  value: unknown,
+  appProperties?: Record<string, string>
+): Promise<string> {
+  return upsertTextFileInFolder(
+    token,
+    parentFolderId,
+    fileName,
+    JSON.stringify(value, null, 2),
+    'application/json',
+    appProperties
+  );
+}
+
+export async function readJsonFileFromDrive<T>(
+  token: string,
+  fileId: string,
+  fallback: T
+): Promise<T> {
+  try {
+    const text = await downloadTextFromDrive(token, fileId);
+    return JSON.parse(text) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 /**
@@ -196,6 +418,41 @@ export async function downloadFileBuffer(token: string, fileId: string): Promise
   }
   const arrayBuffer = await res.arrayBuffer();
   return Buffer.from(arrayBuffer);
+}
+
+export async function extractTextFromBuffer(
+  file: { name: string; mimeType: string },
+  buffer: Buffer,
+  maxChars = 2000
+): Promise<string> {
+  try {
+    if (file.mimeType === 'text/plain' || file.name.endsWith('.txt')) {
+      return buffer.toString('utf-8').substring(0, maxChars);
+    }
+
+    if (file.mimeType === 'application/pdf' || file.name.endsWith('.pdf')) {
+      const { PDFParse } = await import('pdf-parse');
+      const parser = new PDFParse({ data: new Uint8Array(buffer) });
+      const result = await parser.getText();
+      await parser.destroy();
+      return (result.text || '').substring(0, maxChars);
+    }
+
+    if (
+      file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      file.mimeType === 'application/msword' ||
+      file.name.endsWith('.docx') ||
+      file.name.endsWith('.doc')
+    ) {
+      const result = await mammoth.extractRawText({ buffer });
+      return (result.value || '').substring(0, maxChars);
+    }
+
+    return '';
+  } catch (err) {
+    console.error(`[extractTextFromBuffer] Failed for ${file.name}:`, err);
+    return '';
+  }
 }
 
 /**
@@ -224,23 +481,16 @@ export async function extractTextFromFile(
       return text.substring(0, maxChars);
     }
 
-    if (file.mimeType === 'application/pdf' || file.name.endsWith('.pdf')) {
-      const buffer = await downloadFileBuffer(token, file.id);
-      const parser = new PDFParse({ data: new Uint8Array(buffer) });
-      const result = await parser.getText();
-      await parser.destroy();
-      return (result.text || '').substring(0, maxChars);
-    }
-
     if (
+      file.mimeType === 'application/pdf' ||
+      file.name.endsWith('.pdf') ||
       file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
       file.mimeType === 'application/msword' ||
       file.name.endsWith('.docx') ||
       file.name.endsWith('.doc')
     ) {
       const buffer = await downloadFileBuffer(token, file.id);
-      const result = await mammoth.extractRawText({ buffer });
-      return (result.value || '').substring(0, maxChars);
+      return extractTextFromBuffer(file, buffer, maxChars);
     }
 
     return '';
@@ -256,11 +506,25 @@ export async function extractTextFromFile(
 export async function fetchAllFilesInFolder(
   token: string,
   folderId: string
-): Promise<Array<{ id: string; name: string; mimeType: string }>> {
-  const allFiles: Array<{ id: string; name: string; mimeType: string }> = [];
+): Promise<Array<{
+  id: string;
+  name: string;
+  mimeType: string;
+  appProperties?: Record<string, string>;
+  createdTime?: string;
+  modifiedTime?: string;
+}>> {
+  const allFiles: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    appProperties?: Record<string, string>;
+    createdTime?: string;
+    modifiedTime?: string;
+  }> = [];
   const searchQuery = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
   const filesRes = await fetch(
-    `${driveApi}/files?q=${searchQuery}&fields=files(id,name,mimeType)&pageSize=100`,
+    `${driveApi}/files?q=${searchQuery}&fields=files(id,name,mimeType,appProperties,createdTime,modifiedTime)&pageSize=100`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
 
@@ -268,7 +532,16 @@ export async function fetchAllFilesInFolder(
     throw new Error(`[Drive ${filesRes.status}] Failed to list files in folder ${folderId}`);
   }
 
-  const data = (await filesRes.json()) as { files?: Array<{ id: string; name: string; mimeType: string }> };
+  const data = (await filesRes.json()) as {
+    files?: Array<{
+      id: string;
+      name: string;
+      mimeType: string;
+      appProperties?: Record<string, string>;
+      createdTime?: string;
+      modifiedTime?: string;
+    }>;
+  };
   const files = data.files || [];
 
   for (const file of files) {
@@ -353,5 +626,10 @@ export function parsePatientFolder(f: DriveFileRaw) {
     sex: pSex || 'M',
     lastVisit: f.appProperties?.lastNoteDate || f.createdTime?.split('T')[0] || '',
     alerts: [] as string[],
+    medicalAid: f.appProperties?.medicalAid || undefined,
+    medicalAidPlan: f.appProperties?.medicalAidPlan || undefined,
+    medicalAidNumber: f.appProperties?.medicalAidNumber || undefined,
+    folderNumber: f.appProperties?.folderNumber || undefined,
+    idNumber: f.appProperties?.idNumber || undefined,
   };
 }

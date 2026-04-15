@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { PatientWorkspace } from './pages/PatientWorkspace';
 import { Toast } from './components/Toast';
 import { SettingsModal, type SettingsModalTab } from './components/SettingsModal';
-import { CalendarModal } from './components/CalendarModal';
 import {
   checkAuth,
   logout,
@@ -17,8 +16,16 @@ import {
   runSchedulerNow,
   ApiError,
 } from './services/api';
+import { normalizeUserSettings } from '../../shared/types';
 import type { Patient, UserSettings } from '../../shared/types';
 import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, Clock, Play, User, PanelLeft } from 'lucide-react';
+
+const CalendarPage = lazy(() =>
+  import('./pages/CalendarPage').then((m) => ({ default: m.CalendarPage }))
+);
+const AdmissionsPage = lazy(() =>
+  import('./pages/AdmissionsPage').then((m) => ({ default: m.AdmissionsPage }))
+);
 
 const HAS_OPENED_PATIENT_KEY = 'halo_hasOpenedPatient';
 
@@ -51,6 +58,8 @@ function isPractitionerProfileComplete(s: UserSettings | null | undefined): bool
   return [s.firstName, s.lastName, s.profession, s.department].every((x) => !!String(x ?? '').trim());
 }
 
+type MainView = 'home' | 'calendar' | 'admissions';
+
 export const App = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patientsDrawerOpen, setPatientsDrawerOpen] = useState(false);
@@ -72,6 +81,7 @@ export const App = () => {
   const [isReady, setIsReady] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
+  const [mainView, setMainView] = useState<MainView>('home');
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [patientToDelete, setPatientToDelete] = useState<Patient | null>(null);
@@ -106,12 +116,10 @@ export const App = () => {
   const [schedulerPrompt, setSchedulerPrompt] = useState<{ pending: number; due: number } | null>(null);
   const [schedulerRunning, setSchedulerRunning] = useState(false);
 
-  // Calendar modal state
-  const [showCalendar, setShowCalendar] = useState(false);
-
   // Persist selected patient to sessionStorage so it survives page refresh
   // Also track recently opened patients in localStorage
   const selectPatient = useCallback((id: string | null) => {
+    setMainView('home');
     setSelectedPatientId(id);
     if (id) {
       sessionStorage.setItem('halo_selectedPatientId', id);
@@ -189,7 +197,7 @@ export const App = () => {
           setSettingsLoading(true);
           try {
             const res = await loadSettings();
-            if (res.settings) setUserSettings(res.settings);
+            if (res.settings) setUserSettings(normalizeUserSettings(res.settings));
           } catch {
             // ignore: app can still render, but we want to stop the loading gate
           } finally {
@@ -256,8 +264,9 @@ export const App = () => {
   };
 
   const handleSaveSettings = async (settings: UserSettings) => {
-    await saveSettings(settings);
-    setUserSettings(settings);
+    const normalized = normalizeUserSettings(settings);
+    await saveSettings(normalized);
+    setUserSettings(normalized);
     showToast('Settings saved.', 'success');
   };
 
@@ -398,7 +407,8 @@ export const App = () => {
   }
 
   const activePatient = patients.find(p => p.id === selectedPatientId);
-  const showInlineSidebar = !!selectedPatientId || hasOpenedPatient;
+  const admissionsEnabled = userSettings?.modules?.admissions ?? false;
+  const showInlineSidebar = mainView !== 'home' || !!selectedPatientId || hasOpenedPatient;
   const showPatientDrawer = patientsDrawerOpen && (!selectedPatientId || !isLg);
   const isFirstHomeLanding = !selectedPatientId && !hasOpenedPatient;
 
@@ -422,7 +432,11 @@ export const App = () => {
           onDeletePatient={handleDeleteRequest}
           onLogout={handleLogout}
           onOpenSettings={openSettingsDefault}
-          onOpenCalendar={() => setShowCalendar(true)}
+          onOpenCalendar={() => setMainView('calendar')}
+          onOpenAdmissions={() => {
+            if (admissionsEnabled) setMainView('admissions');
+          }}
+          showAdmissionsAction={admissionsEnabled}
           userEmail={userEmail}
           userSettings={userSettings}
         />
@@ -465,8 +479,13 @@ export const App = () => {
               }}
               onOpenCalendar={() => {
                 setPatientsDrawerOpen(false);
-                setShowCalendar(true);
+                setMainView('calendar');
               }}
+              onOpenAdmissions={() => {
+                setPatientsDrawerOpen(false);
+                if (admissionsEnabled) setMainView('admissions');
+              }}
+              showAdmissionsAction={admissionsEnabled}
               userEmail={userEmail}
               userSettings={userSettings}
             />
@@ -475,7 +494,48 @@ export const App = () => {
       )}
 
       <div className="relative flex min-h-0 min-h-[50vh] flex-1 flex-col overflow-hidden min-w-0 md:min-h-0">
-        {activePatient ? (
+        {mainView === 'calendar' ? (
+          <Suspense
+            fallback={
+              <div className="flex min-h-0 flex-1 w-full items-center justify-center bg-slate-50">
+                <div className="flex flex-col items-center gap-4">
+                  <Loader className="animate-spin text-teal-600" size={32} />
+                  <p className="text-sm text-slate-400 font-medium">Loading calendar...</p>
+                </div>
+              </div>
+            }
+          >
+            <CalendarPage
+              patients={patients}
+              onClose={() => setMainView('home')}
+              onSelectPatientFromEvent={(event) => {
+                if (event.patientId) {
+                  selectPatient(event.patientId);
+                }
+              }}
+            />
+          </Suspense>
+        ) : mainView === 'admissions' && admissionsEnabled ? (
+          <Suspense
+            fallback={
+              <div className="flex min-h-0 flex-1 w-full items-center justify-center bg-slate-50">
+                <div className="flex flex-col items-center gap-4">
+                  <Loader className="animate-spin text-teal-600" size={32} />
+                  <p className="text-sm text-slate-400 font-medium">Loading admissions...</p>
+                </div>
+              </div>
+            }
+          >
+            <AdmissionsPage
+              patients={patients}
+              onToast={showToast}
+              onClose={() => setMainView('home')}
+              onOpenPatient={(patientId) => {
+                selectPatient(patientId);
+              }}
+            />
+          </Suspense>
+        ) : activePatient ? (
           <PatientWorkspace
             patient={activePatient}
             onBack={() => selectPatient(null)}
@@ -599,13 +659,6 @@ export const App = () => {
         loginTime={loginTime}
         initialTab={settingsInitialTab}
         openProfileInEditMode={settingsOpenProfileEdit}
-      />
-
-      {/* CALENDAR MODAL */}
-      <CalendarModal
-        isOpen={showCalendar}
-        onClose={() => setShowCalendar(false)}
-        userEmail={userEmail}
       />
 
       {/* CREATE PATIENT MODAL */}

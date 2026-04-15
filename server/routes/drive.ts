@@ -14,6 +14,15 @@ import {
 } from '../services/drive';
 import { textToDocx } from '../utils/docx';
 import { recoverPendingJobs, runSchedulerNow, getSchedulerStatus } from '../jobs/scheduler';
+import {
+  ensurePatientSummaryUpToDate,
+  refreshPatientSummaryInBackground,
+} from '../services/patientSummary';
+import {
+  loadAdmissionsBoard,
+  normalizeAdmissionsBoard,
+  saveAdmissionsBoard,
+} from '../services/admissionsBoard';
 
 const router = Router();
 router.use(requireAuth);
@@ -706,6 +715,57 @@ router.put('/settings', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Save settings error:', err);
     res.status(500).json({ error: 'Failed to save settings.' });
+  }
+});
+
+// GET /patients/:id/summary
+router.get('/patients/:id/summary', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const patientId = req.params.id as string;
+    const { markdown, state } = await ensurePatientSummaryUpToDate(token, patientId);
+    res.json({ markdown, state });
+  } catch (err) {
+    console.error('Patient summary error:', err);
+    res.status(500).json({ error: 'Failed to build patient summary.' });
+  }
+});
+
+// POST /patients/:id/summary/refresh
+router.post('/patients/:id/summary/refresh', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const patientId = req.params.id as string;
+    void refreshPatientSummaryInBackground(token, patientId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Patient summary refresh error:', err);
+    res.status(500).json({ error: 'Failed to refresh patient summary.' });
+  }
+});
+
+// GET /admissions-board
+router.get('/admissions-board', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const { board } = await loadAdmissionsBoard(token);
+    res.json({ board });
+  } catch (err) {
+    console.error('Load admissions board error:', err);
+    res.status(500).json({ error: 'Failed to load admissions board.' });
+  }
+});
+
+// PUT /admissions-board
+router.put('/admissions-board', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const board = normalizeAdmissionsBoard(req.body);
+    const saved = await saveAdmissionsBoard(token, board);
+    res.json({ board: saved });
+  } catch (err) {
+    console.error('Save admissions board error:', err);
+    res.status(500).json({ error: 'Failed to save admissions board.' });
   }
 });
 

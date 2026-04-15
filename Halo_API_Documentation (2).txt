@@ -1,0 +1,163 @@
+HALO FUNCTIONS API DOCUMENTATION
+
+BASE URL
+
+https://halo-functions-75316778879.africa-south1.run.app
+
+All routes are mounted at the root (no prefix).
+
+GENERAL INFORMATION
+
+Framework: FastAPI Entry app: app.py (served by uvicorn) Routing: No
+global prefix — all endpoints are directly under the base URL. All
+requests and responses use JSON unless otherwise specified.
+
+1. GET /
+
+Full URL: GET https://halo-functions-75316778879.africa-south1.run.app/
+
+Description: Health-check endpoint.
+
+Response: 200 OK { “message”: “Hello World” }
+
+2. POST /extract_text
+
+Full URL: POST
+https://halo-functions-75316778879.africa-south1.run.app/extract_text
+
+Description: Extracts text from a base64-encoded image or PDF.
+
+Request Body: { “base64”: “string”, “content_type”: “image” | “pdf” }
+
+Response: 200 OK { “text”: “extracted text” }
+
+400 Bad Request — invalid input
+
+3. POST /extract_id_card
+
+Full URL: POST
+https://halo-functions-75316778879.africa-south1.run.app/extract_id_card
+
+Description: Extracts structured ID card information from a base64 image
+or PDF.
+
+Request Body: { “content”: “base64_string”, “contentType”: “image” |
+“pdf” }
+
+Response: 200 OK { “name”: “string”, “id_number”: “string”, “dob”:
+“string” }
+
+400 Bad Request — invalid input
+
+4. POST /extract_patient_sticker
+
+Full URL: POST
+https://halo-functions-75316778879.africa-south1.run.app/extract_patient_sticker
+
+Description: Extracts patient details from a base64-encoded hospital
+sticker.
+
+Request Body: { “content”: “base64_string”, “contentType”: “image” |
+“pdf” }
+
+Response: 200 OK { “patient_name”: “string”, “patient_id”: “string” }
+
+400 Bad Request — invalid input
+
+5. POST /prompt
+
+Full URL: POST
+https://halo-functions-75316778879.africa-south1.run.app/prompt
+
+Description: Sends a free-form prompt to an LLM and returns JSON output.
+
+Request Body: { “prompt”: “string” }
+
+Response: 200 OK Returns arbitrary JSON (model-dependent output).
+
+6. POST /generate_note
+
+Full URL: POST
+https://halo-functions-75316778879.africa-south1.run.app/generate_note
+
+Description: Generates a clinical note using Halo’s webhook service.
+
+Request Body: { “user_id”: “string”, “template_id”: “string”, “text”:
+“string”, “return_type”: “note” | “docx” (optional, default = “note”) }
+
+Response:
+
+If return_type = “note”: 200 OK Returns JSON representing the generated
+note. Exact schema depends on upstream webhook.
+
+If return_type = “docx”: 200 OK Returns a DOCX file stream.
+Content-Type:
+application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+Possible Errors: 400 Bad Request — invalid request body 502 Bad Gateway
+— upstream webhook failure
+
+7. POST /generate_summary
+
+Full URL: POST
+https://halo-functions-75316778879.africa-south1.run.app/generate_summary
+
+Description: Generates a summary based on a patient ID number.
+
+Request Body: { “idNumber”: “string” }
+
+Response: 200 OK { “summary”: “string” }
+
+400 Bad Request — invalid input
+
+8. POST /get_templates
+
+Full URL: POST
+https://halo-functions-75316778879.africa-south1.run.app/get_templates
+
+Description: Fetches templates for a given user from Firebase Realtime
+Database.
+
+Request Body: { “user_id”: “string” }
+
+Response: 200 OK Returns the templates object exactly as stored at:
+users/{user_id}/templates in Firebase RTDB.
+
+Exact structure depends on stored data.
+
+9. POST /extract_text_from_docx
+
+Full URL: POST
+https://halo-functions-75316778879.africa-south1.run.app/extract_text_from_docx
+
+Description: Extracts plain text from a base64-encoded DOCX file.
+
+Request Body: { “base64”: “string” }
+
+Response: 200 OK { “text”: “extracted text” }
+
+400 Bad Request — invalid input
+
+10. POST /merge_to_pdf
+
+Full URL: POST
+https://halo-functions-75316778879.africa-south1.run.app/merge_to_pdf
+
+Description: Merges multiple base64-encoded files into a single PDF.
+
+Request Body: { “items”: [ { “content”: “base64_string”, “contentType”:
+“pdf” | “image” | “docx” } ] }
+
+Response: 200 OK { “pdf_base64”: “base64_string” }
+
+400 Bad Request — invalid input
+
+SYSTEM NOTES
+
+• All endpoints are HTTP-based. • No global route prefix. • Several
+endpoints depend on Firebase Realtime Database, external Halo webhook
+services, and LLM services. • Error response schemas are not strictly
+modeled across all endpoints. • DOCX generation depends on upstream
+template configuration.
+
+END OF DOCUMENTATION.

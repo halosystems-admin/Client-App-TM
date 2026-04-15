@@ -4,7 +4,6 @@ import type { ScoringSystem } from './scoringTypes';
 import { ScoringDashboard } from './ScoringDashboard';
 import { CalculatorView } from './CalculatorView';
 import { ChevronLeft } from 'lucide-react';
-import { AppStatus } from '../../../shared/types';
 
 interface ScoringModuleProps {
   onToast?: (message: string, type: 'success' | 'error' | 'info') => void;
@@ -45,10 +44,7 @@ export const ScoringModule: React.FC<ScoringModuleProps> = ({ onToast }) => {
       {!activeSystem ? (
         <ScoringDashboard systems={systems} onSelectSystem={setActiveId} showBmiInline />
       ) : (
-        <CalculatorView
-          system={activeSystem}
-          onCopied={(msg) => onToast?.(msg, 'success')}
-        />
+        <CalculatorView system={activeSystem} />
       )}
     </div>
   );

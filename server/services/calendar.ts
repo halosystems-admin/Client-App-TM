@@ -1,154 +1,402 @@
 import { config } from '../config';
+import type { CalendarAttachment, CalendarEvent } from '../../shared/types';
 
-const CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3';
+const { calendarApi, bookingsCalendarId } = config;
 
-export interface CalendarEventTime {
-  dateTime: string;
+const CALENDAR_REQUEST_TIMEOUT_MS = 25_000;
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = CALENDAR_REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+type ListEventsOptions = {
+  timeMin: string; // ISO datetime
+  timeMax: string; // ISO datetime
   timeZone?: string;
-}
+};
 
-export interface CalendarEvent {
-  id: string;
-  summary?: string;
+type CreateOrUpdateEventData = {
+  title?: string;
   description?: string;
-  start?: CalendarEventTime;
-  end?: CalendarEventTime;
-  htmlLink?: string;
+  start?: string; // ISO datetime
+  end?: string; // ISO datetime
+  timeZone?: string;
   location?: string;
-}
+  patientId?: string;
+  attachmentFileIds?: string[];
+};
 
-interface GoogleCalendarEvent {
+type GoogleCalendarEvent = {
   id: string;
   summary?: string;
   description?: string;
+  location?: string;
+  status?: string;
   start?: { dateTime?: string; date?: string; timeZone?: string };
   end?: { dateTime?: string; date?: string; timeZone?: string };
-  htmlLink?: string;
-  location?: string;
+  extendedProperties?: {
+    private?: Record<string, string>;
+  };
+  attachments?: Array<{
+    fileId?: string;
+    title?: string;
+    fileUrl?: string;
+    mimeType?: string;
+  }>;
+};
+
+function normaliseGoogleEvent(item: GoogleCalendarEvent): CalendarEvent | null {
+  if (item.status === 'cancelled') return null;
+
+  const startIso =
+    item.start?.dateTime ||
+    (item.start?.date ? new Date(item.start.date).toISOString() : null);
+  const endIso =
+    item.end?.dateTime ||
+    (item.end?.date ? new Date(item.end.date).toISOString() : null);
+
+  if (!startIso || !endIso) return null;
+
+  const extendedPrivate = item.extendedProperties?.private ?? {};
+  const patientId = extendedPrivate.patientId;
+
+  let attachments: CalendarAttachment[] | undefined;
+  if (item.attachments && item.attachments.length > 0) {
+    attachments = item.attachments
+      .filter((a) => a.fileId)
+      .map((a) => ({
+        fileId: a.fileId as string,
+        name: a.title,
+        url: a.fileUrl,
+        mimeType: a.mimeType,
+      }));
+  }
+
+  return {
+    id: item.id,
+    calendarId: bookingsCalendarId,
+    start: startIso,
+    end: endIso,
+    title: item.summary || '(No title)',
+    description: item.description || '',
+    location: item.location || '',
+    patientId,
+    attachments,
+    extendedProps: extendedPrivate,
+  };
 }
 
-interface ListEventsResponse {
-  items?: GoogleCalendarEvent[];
+// Exposed for lightweight unit tests
+export const __test__normaliseGoogleEvent = normaliseGoogleEvent;
+
+/**
+ * List events from the configured bookings calendar over an arbitrary time range.
+ */
+export async function listEvents(
+  token: string,
+  { timeMin, timeMax, timeZone }: ListEventsOptions
+): Promise<CalendarEvent[]> {
+  if (!bookingsCalendarId) return [];
+
+  const events: CalendarEvent[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const params = new URLSearchParams({
+      timeMin,
+      timeMax,
+      singleEvents: 'true',
+      orderBy: 'startTime',
+    });
+    if (timeZone) params.set('timeZone', timeZone);
+    if (pageToken) params.set('pageToken', pageToken);
+
+    const url = `${calendarApi}/calendars/${encodeURIComponent(
+      bookingsCalendarId
+    )}/events?${params.toString()}`;
+
+    const res = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      },
+      CALENDAR_REQUEST_TIMEOUT_MS
+    );
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `[Calendar ${res.status}] Failed to fetch events: ${
+          text || res.statusText
+        }`
+      );
+    }
+
+    const data = (await res.json()) as {
+      items?: GoogleCalendarEvent[];
+      nextPageToken?: string;
+    };
+
+    for (const item of data.items || []) {
+      const mapped = normaliseGoogleEvent(item);
+      if (mapped) events.push(mapped);
+    }
+
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return events;
 }
 
 /**
- * Make an authenticated request to the Google Calendar API.
- * Throws on non-2xx responses so callers don't silently consume errors.
+ * List today's events from the configured bookings calendar.
+ * Kept for backwards compatibility with the existing sidebar.
  */
-export async function calendarRequest<T = unknown>(
+export async function listTodayEvents(token: string): Promise<CalendarEvent[]> {
+  const now = new Date();
+  const startOfDay = new Date(now);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  return listEvents(token, {
+    timeMin: startOfDay.toISOString(),
+    timeMax: endOfDay.toISOString(),
+  });
+}
+
+function buildEventBody(data: CreateOrUpdateEventData) {
+  const body: any = {};
+
+  if (data.title !== undefined) {
+    body.summary = data.title;
+  }
+  if (data.description !== undefined) {
+    body.description = data.description;
+  }
+  if (data.location !== undefined) {
+    body.location = data.location;
+  }
+  if (data.start) {
+    body.start = {
+      dateTime: data.start,
+      ...(data.timeZone ? { timeZone: data.timeZone } : {}),
+    };
+  }
+  if (data.end) {
+    body.end = {
+      dateTime: data.end,
+      ...(data.timeZone ? { timeZone: data.timeZone } : {}),
+    };
+  }
+
+  const extendedPrivate: Record<string, string> = {};
+  if (data.patientId) {
+    extendedPrivate.patientId = data.patientId;
+  }
+  if (data.attachmentFileIds && data.attachmentFileIds.length > 0) {
+    extendedPrivate.haloAttachmentFileIds = data.attachmentFileIds.join(',');
+  }
+  if (Object.keys(extendedPrivate).length > 0) {
+    body.extendedProperties = {
+      private: extendedPrivate,
+    };
+  }
+
+  if (data.attachmentFileIds && data.attachmentFileIds.length > 0) {
+    body.attachments = data.attachmentFileIds.map((fileId) => ({
+      fileId,
+    }));
+  }
+
+  return body;
+}
+
+export async function createEvent(
   token: string,
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const res = await fetch(`${CALENDAR_API_BASE}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string> | undefined),
+  data: Required<Pick<CreateOrUpdateEventData, 'title' | 'start' | 'end'>> &
+    Omit<CreateOrUpdateEventData, 'title' | 'start' | 'end'>
+): Promise<CalendarEvent> {
+  if (!bookingsCalendarId) {
+    throw new Error('Bookings calendar is not configured.');
+  }
+
+  const url = `${calendarApi}/calendars/${encodeURIComponent(
+    bookingsCalendarId
+  )}/events?supportsAttachments=true`;
+
+  const res = await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(buildEventBody(data)),
     },
+    CALENDAR_REQUEST_TIMEOUT_MS
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `[Calendar ${res.status}] Failed to create event: ${
+        text || res.statusText
+      }`
+    );
+  }
+
+  const created = (await res.json()) as GoogleCalendarEvent;
+  const mapped = normaliseGoogleEvent(created);
+  if (!mapped) {
+    throw new Error('Created event is missing start or end time.');
+  }
+  return mapped;
+}
+
+export async function updateEvent(
+  token: string,
+  eventId: string,
+  data: CreateOrUpdateEventData
+): Promise<CalendarEvent> {
+  if (!bookingsCalendarId) {
+    throw new Error('Bookings calendar is not configured.');
+  }
+
+  const url = `${calendarApi}/calendars/${encodeURIComponent(
+    bookingsCalendarId
+  )}/events/${encodeURIComponent(eventId)}?supportsAttachments=true`;
+
+  const res = await fetchWithTimeout(
+    url,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(buildEventBody(data)),
+    },
+    CALENDAR_REQUEST_TIMEOUT_MS
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `[Calendar ${res.status}] Failed to update event: ${
+        text || res.statusText
+      }`
+    );
+  }
+
+  const updated = (await res.json()) as GoogleCalendarEvent;
+  const mapped = normaliseGoogleEvent(updated);
+  if (!mapped) {
+    throw new Error('Updated event is missing start or end time.');
+  }
+  return mapped;
+}
+
+export async function deleteEvent(
+  token: string,
+  eventId: string
+): Promise<void> {
+  if (!bookingsCalendarId) {
+    throw new Error('Bookings calendar is not configured.');
+  }
+
+  const url = `${calendarApi}/calendars/${encodeURIComponent(
+    bookingsCalendarId
+  )}/events/${encodeURIComponent(eventId)}`;
+
+  const res = await fetchWithTimeout(
+    url,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    },
+    CALENDAR_REQUEST_TIMEOUT_MS
+  );
+
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `[Calendar ${res.status}] Failed to delete event: ${
+        text || res.statusText
+      }`
+    );
+  }
+}
+
+export async function getEventById(
+  token: string,
+  eventId: string
+): Promise<CalendarEvent | null> {
+  if (!bookingsCalendarId) {
+    throw new Error('Bookings calendar is not configured.');
+  }
+
+  const params = new URLSearchParams({
+    // Ensures attachments are returned when present
+    maxResults: '1',
   });
 
-  let data: unknown;
-  try {
-    data = await res.json();
-  } catch {
-    if (!res.ok) {
-      throw new Error(`[Calendar ${res.status}] Request failed with non-JSON response`);
-    }
-    return {} as T;
+  const url = `${calendarApi}/calendars/${encodeURIComponent(
+    bookingsCalendarId
+  )}/events/${encodeURIComponent(eventId)}?${params.toString()}`;
+
+  const res = await fetchWithTimeout(
+    url,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    },
+    CALENDAR_REQUEST_TIMEOUT_MS
+  );
+
+  if (res.status === 404) {
+    return null;
   }
 
   if (!res.ok) {
-    const message =
-      (data as { error?: { message?: string } })?.error?.message ||
-      `Calendar API error ${res.status}`;
-    throw new Error(`[Calendar ${res.status}] ${message}`);
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `[Calendar ${res.status}] Failed to fetch event: ${
+        text || res.statusText
+      }`
+    );
   }
 
-  return data as T;
+  const event = (await res.json()) as GoogleCalendarEvent;
+  const mapped = normaliseGoogleEvent(event);
+  return mapped;
 }
 
-function toClientEvent(e: GoogleCalendarEvent): CalendarEvent {
-  const startDateTime = e.start?.dateTime || (e.start?.date ? `${e.start.date}T00:00:00Z` : undefined);
-  const endDateTime = e.end?.dateTime || (e.end?.date ? `${e.end.date}T00:00:00Z` : undefined);
-
-  return {
-    id: e.id,
-    summary: e.summary,
-    description: e.description,
-    htmlLink: e.htmlLink,
-    location: e.location,
-    start: startDateTime
-      ? {
-          dateTime: startDateTime,
-          timeZone: e.start?.timeZone || config.nodeEnv === 'production' ? undefined : Intl.DateTimeFormat().resolvedOptions().timeZone,
-        }
-      : undefined,
-    end: endDateTime
-      ? {
-          dateTime: endDateTime,
-          timeZone: e.end?.timeZone || config.nodeEnv === 'production' ? undefined : Intl.DateTimeFormat().resolvedOptions().timeZone,
-        }
-      : undefined,
-  };
-}
-
-export async function listEvents(
+export async function updateEventAttachments(
   token: string,
-  {
-    timeMin,
-    timeMax,
-    maxResults = 50,
-  }: { timeMin?: string; timeMax?: string; maxResults?: number },
-): Promise<CalendarEvent[]> {
-  const params = new URLSearchParams();
-  params.set('singleEvents', 'true');
-  params.set('orderBy', 'startTime');
-  params.set('maxResults', String(maxResults));
-  if (timeMin) params.set('timeMin', timeMin);
-  if (timeMax) params.set('timeMax', timeMax);
-
-  const data = await calendarRequest<ListEventsResponse>(
-    token,
-    `/calendars/primary/events?${params.toString()}`,
-  );
-
-  const items = data.items ?? [];
-  return items.map(toClientEvent);
-}
-
-export interface CreateEventInput {
-  summary: string;
-  description?: string;
-  startDateTime: string;
-  endDateTime: string;
-  timeZone?: string;
-  location?: string;
-}
-
-export async function createEvent(token: string, input: CreateEventInput): Promise<CalendarEvent> {
-  const { summary, description, startDateTime, endDateTime, timeZone, location } = input;
-
-  const body = {
-    summary,
-    description,
-    location,
-    start: {
-      dateTime: startDateTime,
-      timeZone,
-    },
-    end: {
-      dateTime: endDateTime,
-      timeZone,
-    },
-  };
-
-  const created = await calendarRequest<GoogleCalendarEvent>(token, '/calendars/primary/events', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-
-  return toClientEvent(created);
+  eventId: string,
+  attachmentFileIds: string[]
+): Promise<CalendarEvent> {
+  return updateEvent(token, eventId, { attachmentFileIds });
 }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Patient, UserSettings } from '../../../shared/types';
-import { Plus, LogOut, Search, Trash2, ChevronRight, Users, Clock, Settings, Loader2, Calendar, MoreHorizontal } from 'lucide-react';
+import { Plus, LogOut, Search, Trash2, ChevronRight, Users, Clock, Settings, Loader2, Calendar, MoreHorizontal, LayoutGrid } from 'lucide-react';
 import { searchPatientsByConcept } from '../services/api';
 
 interface SidebarProps {
@@ -13,6 +13,8 @@ interface SidebarProps {
   onLogout: () => void;
   onOpenSettings: () => void;
   onOpenCalendar: () => void;
+  onOpenAdmissions: () => void;
+  showAdmissionsAction?: boolean;
   userEmail?: string;
   userSettings?: UserSettings | null;
 }
@@ -27,6 +29,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   onOpenSettings,
   onOpenCalendar,
+  onOpenAdmissions,
+  showAdmissionsAction = false,
   userEmail,
   userSettings,
 }) => {
@@ -162,54 +166,68 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <div className="w-80 md:w-72 lg:w-80 bg-slate-900 h-full min-h-0 flex flex-col text-slate-300 border-r border-slate-800 shadow-2xl">
-      <div className="px-4 pb-3 pt-4 pt-safe">
-        <div className="flex items-center justify-between mb-3 gap-2">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg overflow-hidden shadow-sm shadow-teal-900/20">
-              <img src="/halo-icon.png" alt="HALO" className="w-full h-full object-cover" draggable={false} />
+    <div className="w-80 md:w-72 lg:w-80 bg-slate-900 h-full min-h-0 flex flex-col overflow-hidden text-slate-300 shadow-2xl ring-1 ring-inset ring-slate-800/70">
+      <div className="shrink-0 border-b border-slate-800/80 bg-slate-900/95 px-3 pb-3 pt-3 pt-safe backdrop-blur-sm md:px-4 md:pb-4 md:pt-4">
+        <div className="rounded-xl border border-slate-800/80 bg-slate-900/70 px-3 py-3 md:px-3.5 md:py-3.5">
+          <div className="mb-3.5 flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="h-8 w-8 overflow-hidden rounded-lg shadow-sm shadow-teal-900/20">
+                <img src="/halo-icon.png" alt="HALO" className="h-full w-full object-cover" draggable={false} />
+              </div>
+              <div>
+                <h1 className="text-[15px] font-bold leading-tight tracking-tight text-white">HALO</h1>
+                <p className="text-[10px] font-bold tracking-wider text-teal-500">PATIENT DRIVE</p>
+              </div>
             </div>
-            <div>
-              <h1 className="font-bold text-white text-[15px] leading-tight tracking-tight">HALO</h1>
-              <p className="text-[10px] text-teal-500 font-bold tracking-wider">PATIENT DRIVE</p>
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition-all hover:bg-slate-800 hover:text-teal-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60"
+              title="Settings & Profile"
+            >
+              <Settings size={16} />
+            </button>
+          </div>
+          <div className={`mb-3 grid gap-2 ${showAdmissionsAction ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <button
+              onClick={onOpenCalendar}
+              className="flex h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-700/60 bg-slate-800 text-xs font-semibold text-slate-200 transition-all hover:bg-slate-700 hover:text-white"
+              title="Open Calendar"
+            >
+              <Calendar size={14} className="shrink-0 text-teal-400" />
+              <span>Calendar</span>
+            </button>
+            {showAdmissionsAction && (
+              <button
+                onClick={onOpenAdmissions}
+                className="flex h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-700/60 bg-slate-800 text-xs font-semibold text-slate-200 transition-all hover:bg-slate-700 hover:text-white"
+                title="Open Admissions"
+              >
+                <LayoutGrid size={14} className="shrink-0 text-cyan-300" />
+                <span>Admissions</span>
+              </button>
+            )}
+          </div>
+          <div className="group relative">
+            <Search className="absolute left-3 top-2 text-slate-500 transition-colors group-focus-within:text-teal-400" size={15} />
+            <input
+              type="text"
+              placeholder="Search name, DOB, or condition..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full rounded-lg border border-transparent bg-slate-800/50 py-2 pl-9 pr-3 text-xs outline-none transition-all placeholder:text-slate-600 focus:border-teal-500/30 focus:bg-slate-800 focus:ring-2 focus:ring-teal-500/50"
+            />
+          </div>
+          {isAiSearching && searchTerm.length >= 3 && (
+            <div className="mt-2 flex items-center gap-2 px-1">
+              <Loader2 size={12} className="animate-spin text-teal-500" />
+              <span className="text-[10px] font-medium uppercase tracking-wider text-teal-500">Scanning patient records...</span>
             </div>
-          </div>
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition-all hover:bg-slate-800 hover:text-teal-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60"
-            title="Settings & Profile"
-          >
-            <Settings size={16} />
-          </button>
+          )}
         </div>
-        <button
-          onClick={onOpenCalendar}
-          className="w-full mb-3 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-slate-800 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition-all border border-slate-700/60"
-          title="Open Calendar"
-        >
-          <Calendar size={14} className="text-teal-400 shrink-0" />
-          <span>Calendar</span>
-        </button>
-        <div className="relative group">
-          <Search className="absolute left-3 top-2 text-slate-500 group-focus-within:text-teal-400 transition-colors" size={15} />
-          <input
-            type="text"
-            placeholder="Search name, DOB, or condition..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-800/50 focus:bg-slate-800 text-xs pl-9 pr-3 py-2 rounded-lg outline-none focus:ring-2 focus:ring-teal-500/50 border border-transparent focus:border-teal-500/30 transition-all placeholder:text-slate-600"
-          />
-        </div>
-        {isAiSearching && searchTerm.length >= 3 && (
-          <div className="flex items-center gap-2 mt-2 px-1">
-            <Loader2 size={12} className="text-teal-500 animate-spin" />
-            <span className="text-[10px] text-teal-500 font-medium uppercase tracking-wider">Scanning patient records...</span>
-          </div>
-        )}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 custom-scrollbar">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 custom-scrollbar md:px-4">
         {!searchTerm && patients.length > 0 && (
           <div className="mb-4">
             <div className="flex items-center gap-1.5 px-2 mb-1.5">
@@ -236,18 +254,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      <div className="p-3 border-t border-slate-800 bg-slate-900/50 backdrop-blur-sm z-10 pb-safe">
+      <div className="shrink-0 border-t border-slate-800/80 bg-slate-900/95 px-4 pb-safe pt-4 backdrop-blur-sm md:px-5 md:pt-5">
         <button
           type="button"
           onClick={onCreatePatient}
-          className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-teal-600 text-sm font-semibold text-white shadow-sm shadow-teal-900/20 transition-all hover:bg-teal-500 active:scale-[0.98]"
+          className="flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-teal-600 text-sm font-semibold text-white shadow-sm shadow-teal-900/20 transition-all hover:bg-teal-500 active:scale-[0.98]"
         >
           <Plus size={16} /> New Patient Folder
         </button>
         <button
           type="button"
           onClick={onLogout}
-          className="mt-2 flex h-7 w-full items-center justify-center gap-1.5 rounded-lg bg-rose-600 text-[11px] font-semibold text-white transition-colors hover:bg-rose-700"
+          className="mb-4 mt-2.5 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-rose-600 text-xs font-semibold text-white transition-colors hover:bg-rose-700 md:mb-5"
         >
           <LogOut size={12} /> SIGN OUT
         </button>

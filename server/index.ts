@@ -6,14 +6,18 @@ import helmet from 'helmet';
 import pg from 'pg';
 import connectPgSimple from 'connect-pg-simple';
 import path from 'path';
+import http from 'http';
 import { config } from './config';
 import authRoutes, { authBrowserEntryRouter } from './routes/auth';
 import driveRoutes from './routes/drive';
 import aiRoutes from './routes/ai';
 import notesProxyRoutes from './routes/notesProxy';
 import calendarRoutes from './routes/calendar';
+import haloRoutes from './routes/halo';
+import requestTemplateRoutes from './routes/requestTemplate';
 import { requireAuth } from './middleware/requireAuth';
 import { startScheduler } from './jobs/scheduler';
+import { attachTranscribeWebSocket } from './ws/transcribe';
 
 const app = express();
 
@@ -110,10 +114,24 @@ app.use('/api/drive', requireAuth, driveRoutes);
 app.use('/api/ai', aiLimiter, requireAuth, aiRoutes);
 app.use('/api/notes', requireAuth, notesProxyRoutes);
 app.use('/api/calendar', requireAuth, calendarRoutes);
+app.use('/api/halo', haloRoutes);
+app.use('/api/request-template', requestTemplateRoutes);
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const checks: Record<string, 'ok' | 'unconfigured'> = {
+    server: 'ok',
+    gemini: config.geminiApiKey ? 'ok' : 'unconfigured',
+    deepgram: config.deepgramApiKey ? 'ok' : 'unconfigured',
+    haloApi: config.haloApiBaseUrl ? 'ok' : 'unconfigured',
+    smtp: config.smtpHost && config.smtpUser ? 'ok' : 'unconfigured',
+  };
+  const allOk = Object.values(checks).every((v) => v === 'ok');
+  res.status(allOk ? 200 : 207).json({
+    status: allOk ? 'ok' : 'partial',
+    timestamp: new Date().toISOString(),
+    checks,
+  });
 });
 
 // Serve frontend in production
@@ -131,7 +149,10 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: 'An unexpected error occurred.' });
 });
 
-app.listen(config.port, () => {
+const server = http.createServer(app);
+attachTranscribeWebSocket(server);
+
+server.listen(config.port, () => {
   console.log(`Halo server running on port ${config.port} (${config.isProduction ? 'production' : 'development'})`);
   startScheduler();
 });

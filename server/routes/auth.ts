@@ -39,6 +39,7 @@ function startGoogleOAuth(
 
   const scopes = [
     'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/calendar.events',
     'openid',
     'email',
     'profile',

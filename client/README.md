@@ -132,3 +132,42 @@ halo-app/
 - File type and size restrictions on uploads
 - OAuth refresh token handling for seamless session renewal
 - HttpOnly, secure, SameSite cookies in production
+
+## Post-Merge Smoke Checklist (Calendar + Admissions)
+
+Run this quick check after major merges to catch regressions early.
+
+### 1) Runtime/API smoke
+
+1. Ensure server is running on `http://localhost:3000`.
+2. Check health endpoint:
+  - `GET /api/health`
+  - Expected: HTTP `200` (`status: "ok"`) or HTTP `207` (`status: "partial"`) with `checks` payload.
+3. Check protected endpoints without auth (route existence + guard):
+  - `GET /api/calendar/events?start=...&end=...`
+  - `GET /api/drive/admissions-board`
+  - Expected: HTTP `401` when not signed in.
+
+### 2) Calendar UI smoke
+
+1. Sign in and open **Calendar** from the sidebar.
+2. Create an event using title + start/end and save.
+3. Edit that event (time/title), save, and confirm updates persist.
+4. Drag or resize the event and confirm the new time persists after refresh.
+5. Delete the event and confirm it disappears after refresh.
+6. For a patient-linked event, open attachments and save selected files.
+
+### 3) Admissions UI smoke
+
+1. In Settings, enable **Admissions board** module.
+2. Confirm **Admissions** appears in sidebar and opens correctly.
+3. Add a patient card, move it across columns, and refresh.
+4. Confirm moved position and movement history remain consistent.
+5. Open card drawer, edit diagnosis/tasks/tags/doctors, save, and refresh.
+
+### 4) Build and tests
+
+1. Run `npm run build:server`.
+2. Run `npm run build:client`.
+3. Run `npm run test:calendar`.
+4. Run `npm run test:calendar:routes`.

@@ -1,0 +1,137 @@
+You are updating the HALO client application.
+
+Your objective is to replace the existing note generation and file-saving workflow with a new Halo Functions API-driven workflow.
+
+The Halo API documentation will be available in the project file structure. You must reference it directly when implementing endpoints and request schemas.
+
+========================
+PRIMARY OBJECTIVE
+========================
+
+Implement a clean, production-ready note generation flow that:
+
+- Uses POST /generate_note with return_type="note" to generate editable notes
+- Displays notes in editable preview mode (NOT markdown)
+- Autosaves edits every 30 seconds
+- Uses POST /generate_note with return_type="docx" to generate final DOCX files
+- Removes ALL .txt generation and storage logic
+- Supports multiple notes with mini-tab switching
+- Allows per-note save/email and a Save All option
+- Applies letterhead ONLY at DOCX generation stage
+
+========================
+IMPLEMENTATION REQUIREMENTS
+========================
+
+1) REMOVE LEGACY TXT FLOW
+- Delete or disable all .txt creation, storage, or upload logic.
+- No intermediate .txt files should exist anywhere in the app.
+
+2) TEMPLATE SELECTION
+- Use POST /get_templates with user_id to populate the template selector.
+- Store selected template_id in application state.
+
+3) NOTE GENERATION (PREVIEW MODE)
+After transcript text becomes available:
+
+Call:
+POST /generate_note
+With:
+{
+  user_id,
+  template_id,
+  text: transcript,
+  return_type: "note"
+}
+
+Requirements:
+- Show visible loading state.
+- Handle 400 and 502 errors gracefully.
+- Normalize the response so it supports:
+  - Single note
+  - Multiple notes
+
+Each note should map to:
+{
+  noteId,
+  title,
+  content,
+  template_id,
+  lastSavedAt,
+  dirty
+}
+
+4) PREVIEW UI
+- Render notes in editable rich text form.
+- Do NOT render markdown.
+- Each note should appear in its own mini-tab.
+- Users can switch between tabs.
+- Titles must be editable.
+- Edits update note.content in state.
+
+5) AUTOSAVE
+- Implement autosave every 30 seconds.
+- Autosave must:
+  - Preserve edits per note
+  - Not trigger DOCX generation
+  - Not overwrite newer edits
+- Use dirty flags or timestamps to manage state safely.
+
+6) DOCX GENERATION (AFTER EDITS)
+When user clicks:
+- "Save as DOCX"
+- "Save All"
+- "Email"
+
+Call:
+POST /generate_note
+With:
+{
+  user_id,
+  template_id,
+  text: edited_note_content,
+  return_type: "docx"
+}
+
+Rules:
+- Always generate DOCX from the latest edited content.
+- Letterhead must be applied at this stage only.
+- Save returned DOCX stream directly to Google Drive patient folder.
+- No intermediate text files.
+
+7) MULTI-NOTE RULES
+- Provide Save All if more than one note.
+- Otherwise allow per-note Save and Email.
+- Email is per-note only.
+
+8) CODE STRUCTURE
+- Create a dedicated Halo API client module.
+- Centralize error handling.
+- Normalize generate_note responses before UI rendering.
+- Keep UI components separate from API logic.
+
+========================
+DELIVERABLE
+========================
+
+A working note workflow where:
+
+- Transcript → generate_note (note) → editable preview → autosave
+- Edited content → generate_note (docx) → Google Drive save
+- No .txt files anywhere
+- Letterhead only applied at DOCX stage
+- Multiple notes supported cleanly
+
+Before implementing:
+Search the codebase for:
+- Existing note preview logic
+- Deepgram transcript handling
+- Google Drive upload logic
+- Any existing Halo API integrations
+
+Refactor minimally and cleanly.
+
+
+
+use user_id = cae6877e-0fbe-4ea1-acce-39957e7575bc
+template_id's are clinical_note for the Clinical Note, op_report for the Operation Report and jon_note for Open Note

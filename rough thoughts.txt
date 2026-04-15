@@ -1,0 +1,14 @@
+List of changes to make 
+- Change colour scheme to be blue not green 
+- Encorporate the Halo API details to generate notes 
+- Remove the .txt feature. Allow the user to edit on the preview mode, once the note is generated via the Halo generate note api. Allow the user to edit it in the google doc. 
+    - User flow: make note, note generated, note saved in Google docs with their letterhead 
+    - Generate the note via the generate_note endpoint in the Halo API docs. 
+    - This note should then be rendered in a preview style like we currently have where the content of the note comes through and they can edit the titles. They can then choose to edit in google docs. 
+    - The .txt should no longer be saved to the Google Drive - we want the docx to be saved straight there once the doctor has saved the note. No more .txt 
+    - Use the attached Halo API documentation to ensure that the generate note flow works by parsing through the text generated via deepgram + the user's choice of templates (populates their template_id) + the user_id, which should then generate all of the notes that they want, and render them in separate mini tabs that can be switched between. The text should be editable and not in markdown format. Once they're happy they can say "save as docx" or "email" this then uses the docx aspect of the Halo Api to generate the document and save it to the patient folder.
+
+
+
+
+    

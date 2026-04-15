@@ -6,6 +6,7 @@ import {
   Settings as SettingsIcon, BarChart3, Droplets, Activity, Brain,
   Smartphone,
   ChevronRight,
+  LayoutPanelTop,
 } from 'lucide-react';
 import { runSchedulerNow } from '../services/api';
 import { CustomTemplates } from './settings/CustomTemplates';
@@ -18,6 +19,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   firstName: '', lastName: '', profession: '', department: '',
   city: '', postalCode: '', university: '', noteTemplate: 'soap',
   customTemplateContent: '', customTemplateName: '',
+  modules: { admissions: false },
   showScoringInBottomNav: true,
 };
 
@@ -281,8 +283,10 @@ export const SettingsModal: React.FC<Props> = ({
   if (!isOpen) return null;
 
   const requiredFieldsMissing = !form.firstName.trim() || !form.lastName.trim() || !form.profession.trim() || !form.department.trim();
-  const hasUnsavedTemplateChanges = templateTab !== 'practice' && templateTab !== (settings?.noteTemplate || 'soap');
-  const showSaveFooter = editMode || hasUnsavedTemplateChanges;
+  const persistedSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  const hasUnsavedTemplateChanges = templateTab !== 'practice' && templateTab !== (persistedSettings.noteTemplate || 'soap');
+  const hasUnsavedModuleChanges = (form.modules?.admissions ?? false) !== (persistedSettings.modules?.admissions ?? false);
+  const showSaveFooter = editMode || hasUnsavedTemplateChanges || hasUnsavedModuleChanges;
 
   const tabItems: { id: TabType; label: string; icon: React.ElementType }[] = [
     { id: 'profile', label: 'Profile', icon: User },
@@ -700,6 +704,34 @@ export const SettingsModal: React.FC<Props> = ({
                       </div>
                     </div>
                   </div>
+
+                  <SectionLabel className="mt-7">Modules</SectionLabel>
+                  <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-black/[0.04]">
+                    <div className="flex items-center justify-between gap-3 px-4 min-h-[44px] py-3">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="w-7 h-7 bg-cyan-500/10 rounded-lg flex items-center justify-center shrink-0">
+                          <LayoutPanelTop size={14} className="text-cyan-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[15px] text-[#1c1c1e]">Admissions board</p>
+                          <p className="text-[12px] text-[#8e8e93] leading-snug">Show Admissions in the sidebar</p>
+                        </div>
+                      </div>
+                      <IOSToggle
+                        checked={form.modules?.admissions ?? false}
+                        onChange={(enabled) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            modules: {
+                              ...(prev.modules || { admissions: false }),
+                              admissions: enabled,
+                            },
+                          }))
+                        }
+                        label="Enable admissions board module"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -734,6 +766,7 @@ export const SettingsModal: React.FC<Props> = ({
                       <p className="text-center text-[13px] text-[#34c759] font-medium mt-3">{schedulerMessage}</p>
                     )}
                   </div>
+
                 </div>
               )}
 

@@ -42,3 +42,38 @@ The legacy logic (JavaScript/Apps Script, placeholder rules, section mapping, fo
 4. Use the same template structure as returned by `/get_templates` (RTDB `users/{user_id}/templates`).
 
 Once the PDFs are in the repo or path is shared, the backend logic can be implemented to match them exactly.
+
+## 2026 Merge Notes (Genesis Alignment)
+
+The app now includes expanded Calendar and Admissions flows. These were merged with backward compatibility so legacy UI calls continue to work during rollout.
+
+### Calendar API compatibility
+
+- `GET /api/calendar/events`
+  - New contract: query `start`, `end`, optional `timeZone`.
+  - Legacy contract still accepted: `timeMin`, `timeMax`.
+- `POST /api/calendar/events`
+  - New contract: body `title`, `start`, `end`, optional `patientId`, `attachmentFileIds`, `timeZone`, `description`, `location`.
+  - Legacy contract still accepted: `summary`, `startDateTime`, `endDateTime`.
+- Additional endpoints used by the new UI:
+  - `GET /api/calendar/today`
+  - `GET /api/calendar/events/:id`
+  - `PATCH /api/calendar/events/:id`
+  - `DELETE /api/calendar/events/:id`
+  - `POST /api/calendar/events/:id/attachments`
+  - `POST /api/calendar/prep-note`
+
+### Admissions API
+
+- `GET /api/drive/admissions-board`
+- `PUT /api/drive/admissions-board`
+
+Admissions visibility in the client is controlled by user settings:
+- `UserSettings.modules.admissions` (default `false`)
+
+### Validation status
+
+- `npm run build:server` passes.
+- `npm run build:client` passes.
+- `npm run test:calendar` now includes concrete assertions for calendar normalization and passes.
+- Runtime smoke check: `GET /api/health` returns status (currently `partial` if optional integrations such as SMTP are unconfigured).
