@@ -49,6 +49,16 @@ export interface ChatAttachment {
   base64Data: string;
 }
 
+export interface AuthMeResponse {
+  signedIn: boolean;
+  email?: string;
+  googleUserId?: string;
+  appUserId?: string;
+  // Backward-compatible alias while clients migrate.
+  user_id?: string;
+  notesApiAvailable?: boolean;
+}
+
 export enum AppStatus {
   IDLE = 'idle',
   LOADING = 'loading',
@@ -283,12 +293,43 @@ export interface TemplateItem {
   [key: string]: unknown;
 }
 
+export interface TemplateSummary {
+  id: string;
+  name?: string;
+  label?: string;
+  type?: string;
+}
+
 export type TemplateListResponse = TemplateItem[];
+
+export type GenerateNoteMode = 'note' | 'docx';
+
+export interface NotesGetTemplatesResponse {
+  templates: TemplateSummary[];
+  empty: boolean;
+  needsHaloSetup: boolean;
+}
+
+export interface NotesProxyErrorResponse {
+  error: string;
+  needsHaloSetup?: boolean;
+}
+
+export interface NotesGenerateNoteRequest {
+  template_id: string;
+  text: string;
+  return_type?: GenerateNoteMode;
+}
+
+export interface NotesGenerateNoteJsonResponse {
+  mode: 'note';
+  note: unknown;
+}
 
 export interface GenerateNoteParams {
   template_id: string;
   text: string;
-  return_type: 'note' | 'docx';
+  return_type?: GenerateNoteMode;
 }
 
 export interface GenerateNoteResponse {

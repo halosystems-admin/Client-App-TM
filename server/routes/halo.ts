@@ -16,7 +16,7 @@ router.use(requireAuth);
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 async function resolveHaloUserId(req: Request, fallback: string): Promise<string> {
-  const resolved = await getStoredHaloUserId(req.session.accessToken!, req.session.userId || req.session.userEmail || fallback);
+  const resolved = await getStoredHaloUserId(req.session.accessToken!);
   return resolved || fallback;
 }
 

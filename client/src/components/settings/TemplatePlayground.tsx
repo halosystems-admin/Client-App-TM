@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Play, FileText, X } from 'lucide-react';
 import type { TemplateItem } from '../../../../shared/types';
-import { ApiError } from '../../services/api';
-import { getTemplates } from '../../services/api';
+import { getCachedTemplates, getTemplatesUiState } from '../../services/api';
 
 interface GeneratedOutput {
   title: string;
@@ -55,9 +54,10 @@ function getScriptKey(template: TemplateItem): string {
 }
 
 export function TemplatePlayground() {
-  const [templates, setTemplates] = useState<TemplateItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [templates, setTemplates] = useState<TemplateItem[]>(() => getCachedTemplates() ?? []);
+  const [loading, setLoading] = useState(() => getCachedTemplates() === null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [emptyMessage, setEmptyMessage] = useState<string>('No templates found for your HALO account.');
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null);
   const [inputText, setInputText] = useState('');
   const [generateLoading, setGenerateLoading] = useState(false);
@@ -70,18 +70,18 @@ export function TemplatePlayground() {
     try {
       setLoading(true);
       setFetchError(null);
-      const templatesArray = await getTemplates();
-      setTemplates(templatesArray);
-      if (templatesArray.length > 0 && !selectedTemplate) {
-        setSelectedTemplate(templatesArray[0]);
+      const state = await getTemplatesUiState(true);
+      setTemplates(state.templates);
+      setEmptyMessage(state.message || 'No templates found for your HALO account.');
+      if (state.templates.length > 0 && !selectedTemplate) {
+        setSelectedTemplate(state.templates[0]);
+      }
+      if (state.status === 'needs-halo-setup' || state.status === 'upstream-failure' || state.status === 'error') {
+        setFetchError(state.message || 'Could not load templates. See console for details.');
       }
     } catch (err) {
       console.error('Fetch Error:', err);
-      if (err instanceof ApiError && err.status === 401) {
-        setFetchError('Session expired. Please sign in again to load templates.');
-      } else {
-        setFetchError('Could not load templates. See console for details.');
-      }
+      setFetchError('Could not load templates. See console for details.');
       setTemplates([]);
     } finally {
       setLoading(false);
@@ -89,6 +89,14 @@ export function TemplatePlayground() {
   };
 
   useEffect(() => {
+    const cachedTemplates = getCachedTemplates();
+    if (cachedTemplates) {
+      setTemplates(cachedTemplates);
+      setLoading(false);
+      setFetchError(null);
+      return;
+    }
+
     fetchTemplates();
   }, []);
 
@@ -140,6 +148,15 @@ export function TemplatePlayground() {
     return (
       <div className="p-4 rounded-xl border border-red-200 bg-red-50/50">
         <p className="text-sm text-red-700">{fetchError}</p>
+        <button
+          type="button"
+          onClick={() => {
+            void fetchTemplates();
+          }}
+          className="mt-2 text-xs font-medium text-teal-700 hover:text-teal-800"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -147,8 +164,16 @@ export function TemplatePlayground() {
   if (templates.length === 0) {
     return (
       <div className="p-4 text-center rounded-xl border border-slate-200 bg-slate-50/50">
-        <p className="text-sm text-slate-600">No practice templates available.</p>
-        <p className="text-xs text-slate-500 mt-1">Ensure your API connection is live and templates are configured.</p>
+        <p className="text-sm text-slate-600">{emptyMessage}</p>
+        <button
+          type="button"
+          onClick={() => {
+            void fetchTemplates();
+          }}
+          className="mt-2 text-xs font-medium text-teal-700 hover:text-teal-800"
+        >
+          Retry
+        </button>
       </div>
     );
   }

@@ -157,10 +157,15 @@ router.get('/callback/google', handleGoogleOAuthCallback);
 
 router.get('/me', (req: Request, res: Response) => {
   if (req.session.accessToken) {
+    const googleUserId = req.session.userId || '';
+    const appUserId = req.session.userId || req.session.userEmail || '';
     res.json({
       signedIn: true,
       email: req.session.userEmail,
-      user_id: req.session.userId || req.session.userEmail || '',
+      googleUserId,
+      appUserId,
+      // Backward-compatible alias consumed by existing clients.
+      user_id: appUserId,
       notesApiAvailable: !!config.notesApiUrl,
     });
   } else {

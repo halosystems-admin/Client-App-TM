@@ -156,8 +156,21 @@ export async function getHaloRootFolder(token: string): Promise<string> {
  * Find or create a "Patient Notes" subfolder inside a patient folder.
  */
 export async function getOrCreatePatientNotesFolder(token: string, patientFolderId: string): Promise<string> {
+  return getOrCreateChildFolder(token, patientFolderId, 'Patient Notes');
+}
+
+export async function getOrCreateChildFolder(
+  token: string,
+  parentFolderId: string,
+  folderName: string
+): Promise<string> {
+  const normalizedName = folderName.trim();
+  if (!normalizedName) {
+    throw new Error('Folder name is required.');
+  }
+
   const searchQuery = encodeURIComponent(
-    `'${patientFolderId}' in parents and name='Patient Notes' and mimeType='application/vnd.google-apps.folder' and trashed=false`
+    `'${parentFolderId}' in parents and name='${normalizedName.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
   );
   const data = await driveRequest(token, `/files?q=${searchQuery}&fields=files(id)`);
 
@@ -172,18 +185,30 @@ export async function getOrCreatePatientNotesFolder(token: string, patientFolder
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      name: 'Patient Notes',
-      parents: [patientFolderId],
+      name: normalizedName,
+      parents: [parentFolderId],
       mimeType: 'application/vnd.google-apps.folder',
     }),
   });
 
   if (!createRes.ok) {
-    throw new Error(`[Drive ${createRes.status}] Failed to create Patient Notes folder`);
+    throw new Error(`[Drive ${createRes.status}] Failed to create ${normalizedName} folder`);
   }
 
   const folder = (await createRes.json()) as { id: string };
   return folder.id;
+}
+
+export async function getOrCreateFolderChain(
+  token: string,
+  parentFolderId: string,
+  folderNames: string[]
+): Promise<string> {
+  let currentFolderId = parentFolderId;
+  for (const folderName of folderNames) {
+    currentFolderId = await getOrCreateChildFolder(token, currentFolderId, folderName);
+  }
+  return currentFolderId;
 }
 
 /**

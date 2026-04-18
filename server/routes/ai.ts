@@ -19,6 +19,19 @@ router.use(requireAuth);
 const getUserId = (req: Request): string =>
   req.session.userEmail ?? req.session.userId ?? 'unknown-user';
 
+function stripScribePreamble(text: string): string {
+  const trimmed = text.trim();
+  const headingMatch = trimmed.match(/\n(?:##\s+|Subjective:|Objective:|Assessment:|Plan:)/i);
+  if (headingMatch?.index && headingMatch.index > 0) {
+    return trimmed.slice(headingMatch.index + 1).trim();
+  }
+
+  return trimmed.replace(
+    /^(?:I\s+(?:will|’?ll)|Sure[,!]?|Certainly[,!]?|Of course[,!]?|Here(?:'s| is)[^\n]*\n+)/i,
+    ''
+  ).trim();
+}
+
 // POST /summary — enhanced: reads actual file content (PDF, DOCX, TXT, Google Docs)
 router.post('/summary', async (req: Request, res: Response) => {
   try {
@@ -362,14 +375,14 @@ router.post('/transcribe', async (req: Request, res: Response) => {
     // Fallback to Gemini if Deepgram is not available
     if (!isDeepgramAvailable()) {
       console.log('Deepgram key not set, falling back to Gemini for transcription');
-      const soapNote = await transcribeAudio(
+      const soapNote = stripScribePreamble(await transcribeAudio(
         geminiTranscriptionPrompt(customTemplate),
         cleanBase64,
         audioMime,
         userId,
         'Gemini-Audio-SOAP-Fallback',
         false
-      );
+      ));
       res.json({ soapNote, rawTranscript: '' });
       return;
     }
@@ -381,12 +394,12 @@ router.post('/transcribe', async (req: Request, res: Response) => {
       return;
     }
 
-    const soapNote = await generateText(
+    const soapNote = stripScribePreamble(await generateText(
       soapNotePrompt(transcript, customTemplate),
       userId,
       'Gemini-SOAP-Gen',
       false
-    );
+    ));
     res.json({ soapNote, rawTranscript: transcript });
   } catch (err) {
     console.error('Transcribe error:', err);

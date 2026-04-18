@@ -5,6 +5,7 @@ import {
   driveRequest,
   getHaloRootFolder,
   getOrCreatePatientNotesFolder,
+  getOrCreateFolderChain,
   uploadToDrive,
   sanitizeString,
   isValidDate,
@@ -31,6 +32,7 @@ const { driveApi, uploadApi } = config;
 
 const MAX_FILE_SIZE_MB = 25;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 const ALLOWED_UPLOAD_TYPES = [
   'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
   'application/pdf',
@@ -42,6 +44,113 @@ const ALLOWED_UPLOAD_TYPES = [
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 ];
 const DEFAULT_PAGE_SIZE = 50;
+
+async function listFolderChildren(token: string, folderId: string): Promise<Array<{ id: string; name: string; mimeType: string }>> {
+  const items: Array<{ id: string; name: string; mimeType: string }> = [];
+  let pageToken: string | undefined;
+
+  do {
+    let url = `/files?q=${encodeURIComponent(
+      `'${folderId}' in parents and trashed=false`
+    )}&fields=files(id,name,mimeType),nextPageToken&pageSize=200`;
+    if (pageToken) {
+      url += `&pageToken=${encodeURIComponent(pageToken)}`;
+    }
+    const data = await driveRequest(token, url);
+    for (const f of data.files || []) {
+      items.push({ id: f.id, name: f.name, mimeType: f.mimeType });
+    }
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return items;
+}
+
+async function ensureChildFolder(token: string, parentId: string, name: string): Promise<string> {
+  const q = encodeURIComponent(
+    `'${parentId}' in parents and name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
+  );
+  const existing = await driveRequest(token, `/files?q=${q}&fields=files(id)`);
+  if (existing.files && existing.files.length > 0) {
+    return existing.files[0].id;
+  }
+
+  const createRes = await fetch(`${driveApi}/files`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name,
+      parents: [parentId],
+      mimeType: 'application/vnd.google-apps.folder',
+    }),
+  });
+  if (!createRes.ok) {
+    const errText = await createRes.text().catch(() => 'Unknown error');
+    throw new Error(`[Drive ${createRes.status}] Failed to create folder ${name}: ${errText}`);
+  }
+  const folder = (await createRes.json()) as { id: string };
+  return folder.id;
+}
+
+async function moveItem(token: string, itemId: string, fromParentId: string, toParentId: string): Promise<void> {
+  const url = `${driveApi}/files/${itemId}?addParents=${encodeURIComponent(toParentId)}&removeParents=${encodeURIComponent(fromParentId)}`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => 'Unknown error');
+    throw new Error(`[Drive ${res.status}] Failed to move item ${itemId}: ${errText}`);
+  }
+}
+
+async function trashItem(token: string, itemId: string): Promise<void> {
+  const res = await fetch(`${driveApi}/files/${itemId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ trashed: true }),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => 'Unknown error');
+    throw new Error(`[Drive ${res.status}] Failed to trash item ${itemId}: ${errText}`);
+  }
+}
+
+async function countFilesRecursive(token: string, folderId: string): Promise<number> {
+  const children = await listFolderChildren(token, folderId);
+  let count = 0;
+  for (const child of children) {
+    if (child.mimeType === FOLDER_MIME_TYPE) {
+      count += await countFilesRecursive(token, child.id);
+    } else {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+async function mergeFolderInto(token: string, sourceFolderId: string, targetFolderId: string): Promise<void> {
+  const children = await listFolderChildren(token, sourceFolderId);
+  for (const child of children) {
+    if (child.mimeType === FOLDER_MIME_TYPE) {
+      const targetChildFolderId = await ensureChildFolder(token, targetFolderId, child.name);
+      await mergeFolderInto(token, child.id, targetChildFolderId);
+      await trashItem(token, child.id);
+    } else {
+      await moveItem(token, child.id, sourceFolderId, targetFolderId);
+    }
+  }
+}
 
 // --- Routes ---
 
@@ -485,6 +594,53 @@ router.delete('/files/:fileId', async (req: Request, res: Response) => {
   }
 });
 
+// POST /patients/:id/notes/merge - merge duplicate Patient Notes folders safely
+router.post('/patients/:id/notes/merge', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const patientId = req.params.id as string;
+
+    const rootChildren = await listFolderChildren(token, patientId);
+    const patientNotesFolders = rootChildren.filter(
+      (f) => f.mimeType === FOLDER_MIME_TYPE && f.name === 'Patient Notes'
+    );
+
+    if (patientNotesFolders.length <= 1) {
+      res.json({ success: true, message: 'No duplicate Patient Notes folders found.', merged: 0 });
+      return;
+    }
+
+    let canonical = patientNotesFolders[0];
+    let canonicalCount = await countFilesRecursive(token, canonical.id);
+    for (let i = 1; i < patientNotesFolders.length; i += 1) {
+      const candidate = patientNotesFolders[i];
+      const candidateCount = await countFilesRecursive(token, candidate.id);
+      if (candidateCount > canonicalCount) {
+        canonical = candidate;
+        canonicalCount = candidateCount;
+      }
+    }
+
+    const mergedFrom: string[] = [];
+    for (const folder of patientNotesFolders) {
+      if (folder.id === canonical.id) continue;
+      await mergeFolderInto(token, folder.id, canonical.id);
+      await trashItem(token, folder.id);
+      mergedFrom.push(folder.id);
+    }
+
+    res.json({
+      success: true,
+      canonicalFolderId: canonical.id,
+      mergedFrom,
+      merged: mergedFrom.length,
+    });
+  } catch (err) {
+    console.error('Merge patient notes folders error:', err);
+    res.status(500).json({ error: 'Failed to merge Patient Notes folders.' });
+  }
+});
+
 // GET /files/:fileId/download - Get download URL
 router.get('/files/:fileId/download', async (req: Request, res: Response) => {
   try {
@@ -567,6 +723,8 @@ router.post('/patients/:id/note', async (req: Request, res: Response) => {
     const token = req.session.accessToken!;
     const patientId = req.params.id as string;
     const content = req.body.content as string;
+    const fileNameInput = sanitizeString(req.body.fileName, 255);
+    const folderPathInput = sanitizeString(req.body.folderPath, 500);
 
     if (!content || typeof content !== 'string' || content.trim().length === 0) {
       res.status(400).json({ error: 'Note content is required.' });
@@ -580,9 +738,23 @@ router.post('/patients/:id/note', async (req: Request, res: Response) => {
 
     const patientNotesFolderId = await getOrCreatePatientNotesFolder(token, patientId);
 
+    const folderSegments = folderPathInput
+      ? folderPathInput
+          .split('/')
+          .map((segment) => sanitizeString(segment, 255))
+          .filter(Boolean)
+      : [];
+    if (folderSegments[0]?.toLowerCase() === 'patient notes') {
+      folderSegments.shift();
+    }
+
+    const targetFolderId = folderSegments.length > 0
+      ? await getOrCreateFolderChain(token, patientNotesFolderId, folderSegments)
+      : patientNotesFolderId;
+
     const savedAt = new Date().toISOString();
     const noteDate = savedAt.split('T')[0];
-    const baseTitle = `Clinical_Note_${noteDate}`;
+    const baseTitle = fileNameInput ? fileNameInput.replace(/\.(docx|pdf)$/i, '') : `Clinical_Note_${noteDate}`;
     const fileName = `${baseTitle}.docx`;
 
     const docxBuffer = await textToDocx(content, baseTitle);
@@ -590,12 +762,13 @@ router.post('/patients/:id/note', async (req: Request, res: Response) => {
       token,
       fileName,
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      patientNotesFolderId,
+      targetFolderId,
       docxBuffer,
       {
         savedAt,
         conversionStatus: 'pending_pdf',
         patientFolderId: patientNotesFolderId,
+        targetFolderId,
       }
     );
 

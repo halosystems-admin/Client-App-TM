@@ -211,7 +211,8 @@ export const App = () => {
   const [settingsOpenProfileEdit, setSettingsOpenProfileEdit] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [userEmail, setUserEmail] = useState<string | undefined>();
-  const [userId, setUserId] = useState<string | undefined>();
+  const [appUserId, setAppUserId] = useState<string | undefined>();
+  const [googleUserId, setGoogleUserId] = useState<string | undefined>();
   const [notesApiAvailable, setNotesApiAvailable] = useState(false);
   const [loginTime] = useState<number>(Date.now());
   const [patientLaunchContext, setPatientLaunchContext] = useState<PatientLaunchContext | null>(null);
@@ -313,7 +314,8 @@ export const App = () => {
         if (auth.signedIn) {
           setIsSignedIn(true);
           setUserEmail(auth.email);
-          setUserId(auth.user_id);
+          setAppUserId(auth.appUserId || auth.user_id);
+          setGoogleUserId(auth.googleUserId || auth.user_id);
           setNotesApiAvailable(!!auth.notesApiAvailable);
           const loadedPatients = await refreshPatients();
           // Validate stored patient selection — clear if patient no longer exists
@@ -683,7 +685,7 @@ export const App = () => {
             onDataChange={refreshPatients}
             onToast={showToast}
             customTemplate={userSettings?.noteTemplate === 'custom' ? userSettings.customTemplateContent : undefined}
-            userId={userId}
+            userId={appUserId}
             notesApiAvailable={notesApiAvailable}
             launchContext={patientLaunchContext}
             showScoringInBottomNav={userSettings?.showScoringInBottomNav !== false}
@@ -795,7 +797,7 @@ export const App = () => {
         settings={userSettings}
         onSave={handleSaveSettings}
         userEmail={userEmail}
-        userId={userId}
+        googleUserId={googleUserId}
         notesUserId={userSettings?.haloUserId}
         notesApiAvailable={notesApiAvailable}
         loginTime={loginTime}

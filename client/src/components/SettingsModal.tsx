@@ -29,7 +29,7 @@ interface Props {
   settings: UserSettings | null;
   onSave: (settings: UserSettings) => Promise<void>;
   userEmail?: string;
-  userId?: string;
+  googleUserId?: string;
   notesUserId?: string;
   notesApiAvailable?: boolean;
   loginTime: number;
@@ -106,7 +106,7 @@ export const SettingsModal: React.FC<Props> = ({
   settings,
   onSave,
   userEmail,
-  userId,
+  googleUserId,
   notesUserId,
   notesApiAvailable,
   loginTime,
@@ -146,6 +146,7 @@ export const SettingsModal: React.FC<Props> = ({
 
   const [activeScoringId, setActiveScoringId] = useState<string | null>(null);
   const [savingBottomNavPref, setSavingBottomNavPref] = useState(false);
+  const [showHaloIdentityAdvanced, setShowHaloIdentityAdvanced] = useState(false);
 
   /* ── Calculations ── */
   const calculateBMI = () => {
@@ -202,8 +203,10 @@ export const SettingsModal: React.FC<Props> = ({
   const handleSave = async () => {
     setSaving(true);
     try {
+      const sanitizedHaloUserId = (form.haloUserId || '').trim();
       const updated: UserSettings = {
         ...form,
+        haloUserId: sanitizedHaloUserId || undefined,
         noteTemplate: templateTab === 'custom' ? 'custom' : 'soap',
       };
       await onSave(updated);
@@ -286,9 +289,10 @@ export const SettingsModal: React.FC<Props> = ({
 
   const requiredFieldsMissing = !form.firstName.trim() || !form.lastName.trim() || !form.profession.trim() || !form.department.trim();
   const persistedSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  const hasUnsavedHaloUserIdChanges = (form.haloUserId || '').trim() !== ((persistedSettings.haloUserId || '').trim());
   const hasUnsavedTemplateChanges = templateTab !== 'practice' && templateTab !== (persistedSettings.noteTemplate || 'soap');
   const hasUnsavedModuleChanges = (form.modules?.admissions ?? false) !== (persistedSettings.modules?.admissions ?? false);
-  const showSaveFooter = editMode || hasUnsavedTemplateChanges || hasUnsavedModuleChanges;
+  const showSaveFooter = editMode || hasUnsavedTemplateChanges || hasUnsavedModuleChanges || hasUnsavedHaloUserIdChanges;
 
   const tabItems: { id: TabType; label: string; icon: React.ElementType }[] = [
     { id: 'profile', label: 'Profile', icon: User },
@@ -435,25 +439,50 @@ export const SettingsModal: React.FC<Props> = ({
                         </div>
                       </div>
 
-                      {(userId || notesUserId) && (
+                      {(googleUserId || notesUserId || userEmail) && (
                         <>
                           <SectionLabel className="mt-7">Account</SectionLabel>
                           <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-black/[0.04]">
-                            {notesUserId ? (
-                              <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5">
-                                <span className="text-[15px] text-[#1c1c1e]">Notes User ID (Provisioned)</span>
-                                <span className="text-[13px] font-mono text-[#8e8e93]">{notesUserId}</span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5">
-                                <span className="text-[15px] text-[#1c1c1e]">Notes User ID (Provisioned)</span>
-                                <span className="text-[13px] text-[#8e8e93]">Not provisioned</span>
+                            <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5">
+                              <span className="text-[15px] text-[#1c1c1e]">HALO Notes User ID</span>
+                              <span className="text-[13px] text-[#8e8e93]">
+                                {(form.haloUserId || notesUserId || '').trim() ? 'Configured' : 'Not configured'}
+                              </span>
+                            </div>
+                            <div className="px-4 pb-3">
+                              <button
+                                type="button"
+                                onClick={() => setShowHaloIdentityAdvanced((prev) => !prev)}
+                                className="text-[13px] font-medium text-teal-700 hover:text-teal-800"
+                              >
+                                {showHaloIdentityAdvanced ? 'Hide Advanced Settings' : 'Advanced Settings'}
+                              </button>
+                            </div>
+                            {showHaloIdentityAdvanced && (
+                              <div className="px-4 pb-4 space-y-2 border-t border-[#c6c6c8]/30">
+                                <label className="block pt-3 text-[13px] font-medium text-[#3c3c43]/60">HALO Notes User ID (Company-managed)</label>
+                                <input
+                                  type="text"
+                                  value={form.haloUserId || ''}
+                                  onChange={(e) => setForm({ ...form, haloUserId: e.target.value })}
+                                  placeholder="Enter company-provisioned HALO user ID"
+                                  className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-white text-[#1c1c1e] outline-none border border-[#d1d1d6] focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition-all placeholder:text-[#c7c7cc] font-mono text-[13px]"
+                                />
+                                <p className="text-[12px] leading-relaxed text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                  Company-provisioned identifier. Do not change unless instructed by your organization.
+                                </p>
                               </div>
                             )}
-                            {userId && (
+                            {userEmail && (
                               <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5 border-t border-[#c6c6c8]/30">
-                                <span className="text-[15px] text-[#1c1c1e]">Google Account ID</span>
-                                <span className="text-[13px] font-mono text-[#8e8e93]">{userId}</span>
+                                <span className="text-[15px] text-[#1c1c1e]">Signed-in Email</span>
+                                <span className="text-[13px] text-[#8e8e93] truncate ml-4 text-right">{userEmail}</span>
+                              </div>
+                            )}
+                            {googleUserId && (
+                              <div className="flex items-center justify-between px-4 min-h-[44px] py-2.5 border-t border-[#c6c6c8]/30">
+                                <span className="text-[15px] text-[#1c1c1e]">Signed-in Google Account ID</span>
+                                <span className="text-[13px] font-mono text-[#8e8e93]">{googleUserId}</span>
                               </div>
                             )}
                           </div>

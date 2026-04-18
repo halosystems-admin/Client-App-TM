@@ -16,7 +16,8 @@ import {
   createFolder,
   askHaloStream,
   generateNote,
-  getTemplates,
+  getCachedTemplates,
+  getTemplatesUiState,
 } from '../services/api';
 import {
   Upload, CheckCircle2, ChevronLeft, Loader2,
@@ -132,12 +133,15 @@ export const PatientWorkspace: React.FC<Props> = ({
   // Template / editor workflow state
   const [activeTemplate, setActiveTemplate] = useState<TemplateItem | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const [templateModalMode, setTemplateModalMode] = useState<'record' | 'save'>('save');
+  const [templateModalMode, setTemplateModalMode] = useState<'record' | 'save' | 'typed'>('save');
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const selectedTemplateIdRef = useRef<string | null>(null);
   const pendingRecordStartRef = useRef<(() => void) | null>(null);
+  const pendingPopulateMemoSourceRef = useRef<string | null>(null);
+  const [populateMemoHasBeenCalled, setPopulateMemoHasBeenCalled] = useState(false);
 
   const normalizeTemplates = (raw: unknown): TemplateItem[] => {
     if (!raw) return [];
@@ -482,14 +486,6 @@ export const PatientWorkspace: React.FC<Props> = ({
 
     setStatus(AppStatus.FILING);
     try {
-      // Ensure Patient Notes folder exists
-      let patientNotesFolder = files.find(
-        (f) => f.mimeType === FOLDER_MIME_TYPE && f.name === 'Patient Notes'
-      );
-      if (!patientNotesFolder) {
-        patientNotesFolder = await createFolder(patient.id, 'Patient Notes');
-      }
-
       const isClerk =
         (activeTemplate.type && String(activeTemplate.type).toLowerCase() === 'clerk') ||
         (activeTemplate.name &&
@@ -507,11 +503,15 @@ export const PatientWorkspace: React.FC<Props> = ({
       let fileName = '';
 
       if (isClerk) {
-        fileName = `[Clinical Notes] ${dateStr}`;
+        fileName = `Clinical Notes - ${dateStr}`;
       } else {
-        const templateName =
-          activeTemplate.name || activeTemplate.label || activeTemplate.id;
-        fileName = `[${templateName}] - ${dateStr}`;
+        const templateName = String(
+          activeTemplate.name || activeTemplate.label || activeTemplate.id
+        )
+          .trim()
+          .replace(/[\\/]+/g, ' ')
+          .replace(/\s+/g, ' ');
+        fileName = `${templateName} - ${dateStr}`;
 
         // Ensure categorical subfolder exists under Patient Notes
         const baseName = templateName.trim();
@@ -524,15 +524,7 @@ export const PatientWorkspace: React.FC<Props> = ({
           categoryFolderName = `${baseName} Notes`;
         }
 
-        const existingChildren = await fetchFolderContents(patientNotesFolder.id);
-        let categoryFolder = existingChildren.find(
-          (f) => f.mimeType === FOLDER_MIME_TYPE && f.name === categoryFolderName
-        );
-        if (!categoryFolder) {
-          categoryFolder = await createFolder(patientNotesFolder.id, categoryFolderName);
-        }
-
-        folderPath = `Patient Notes/${categoryFolderName}`;
+        folderPath = categoryFolderName;
       }
 
       await saveNote(patient.id, noteContent, {
@@ -579,13 +571,17 @@ export const PatientWorkspace: React.FC<Props> = ({
             text: rawText,
             return_type: 'note',
           });
-          if (result.content) {
-            finalText = result.content;
+          if (result.mode === 'note') {
+            finalText =
+              typeof result.note === 'string'
+                ? result.note
+                : JSON.stringify(result.note, null, 2);
           }
         }
       }
 
       setNoteContent(finalText);
+      setPopulateMemoHasBeenCalled(true);
       setEditMode('write');
       onToast('Draft generated. Review and save when ready.', 'success');
     } catch (err) {
@@ -597,45 +593,78 @@ export const PatientWorkspace: React.FC<Props> = ({
     }
   };
 
-  const openTemplateModal = async (mode: 'record' | 'save', pendingStart?: () => void) => {
+  const handlePopulateMemo = () => {
+    if (!noteContent.trim()) {
+      onToast('Type clinical text before generating.', 'info');
+      return;
+    }
+    pendingPopulateMemoSourceRef.current = noteContent;
+    void openTemplateModal('typed');
+  };
+
+  const openTemplateModal = async (mode: 'record' | 'save' | 'typed', pendingStart?: () => void) => {
     setTemplateModalMode(mode);
     setTemplateModalOpen(true);
     if (pendingStart) pendingRecordStartRef.current = pendingStart;
 
-    if (mode === 'record') {
+    if (mode === 'record' || mode === 'typed') {
       setSelectedTemplateId(null);
+      selectedTemplateIdRef.current = null;
     }
 
-    // Always refresh templates when opening the picker so transient failures can recover.
+    const applySelection = (mergedTemplates: TemplateItem[]) => {
+      if (mode !== 'save') return;
+      setSelectedTemplateId((prev) => {
+        if (prev && mergedTemplates.some((t) => t.id === prev)) return prev;
+        let savedId: string | null = null;
+        try {
+          savedId = localStorage.getItem(LAST_TEMPLATE_KEY);
+        } catch {
+          savedId = null;
+        }
+        if (savedId && mergedTemplates.some((t) => t.id === savedId)) {
+          selectedTemplateIdRef.current = savedId;
+          return savedId;
+        }
+        selectedTemplateIdRef.current = SOAP_BUILTIN_TEMPLATE.id;
+        return SOAP_BUILTIN_TEMPLATE.id;
+      });
+    };
+
+    const cachedTemplates = getCachedTemplates();
+    if (cachedTemplates) {
+      const deduped = cachedTemplates.filter((item) => item.id && item.id !== SOAP_BUILTIN_TEMPLATE.id);
+      const mergedTemplates = mode === 'typed' ? deduped : [SOAP_BUILTIN_TEMPLATE, ...deduped];
+      setTemplates(mergedTemplates);
+      setTemplatesLoading(false);
+      setTemplatesError(null);
+      applySelection(mergedTemplates);
+      return;
+    }
+
     setTemplates((prev) => (prev.length > 0 ? prev : [SOAP_BUILTIN_TEMPLATE]));
     setTemplatesLoading(true);
     setTemplatesError(null);
 
     try {
-      const list = await getTemplates();
-      const deduped = list.filter((item) => item.id && item.id !== SOAP_BUILTIN_TEMPLATE.id);
-      const mergedTemplates = [SOAP_BUILTIN_TEMPLATE, ...deduped];
+      const state = await getTemplatesUiState();
+      const deduped = state.templates.filter((item) => item.id && item.id !== SOAP_BUILTIN_TEMPLATE.id);
+      const mergedTemplates = mode === 'typed' ? deduped : [SOAP_BUILTIN_TEMPLATE, ...deduped];
       setTemplates(mergedTemplates);
-
-      if (mode === 'save') {
-        setSelectedTemplateId((prev) => {
-          if (prev && mergedTemplates.some((t) => t.id === prev)) return prev;
-          let savedId: string | null = null;
-          try {
-            savedId = localStorage.getItem(LAST_TEMPLATE_KEY);
-          } catch {
-            savedId = null;
-          }
-          if (savedId && mergedTemplates.some((t) => t.id === savedId)) {
-            return savedId;
-          }
-          return SOAP_BUILTIN_TEMPLATE.id;
-        });
+      if (state.status === 'needs-halo-setup' || state.status === 'upstream-failure' || state.status === 'error') {
+        setTemplatesError(state.message || 'Could not load templates.');
+      } else if (state.status === 'empty') {
+        setTemplatesError(state.message || 'No templates found for your HALO account.');
       }
+      applySelection(mergedTemplates);
     } catch (err) {
       setTemplates((prev) => (prev.length > 0 ? prev : [SOAP_BUILTIN_TEMPLATE]));
       if (mode === 'save') {
-        setSelectedTemplateId((prev) => prev || SOAP_BUILTIN_TEMPLATE.id);
+        setSelectedTemplateId((prev) => {
+          const nextId = prev || SOAP_BUILTIN_TEMPLATE.id;
+          selectedTemplateIdRef.current = nextId;
+          return nextId;
+        });
       }
       setTemplatesError(getErrorMessage(err));
     } finally {
@@ -643,8 +672,42 @@ export const PatientWorkspace: React.FC<Props> = ({
     }
   };
 
+  const generateFromTypedDraft = async (template: TemplateItem) => {
+    const rawText = (pendingPopulateMemoSourceRef.current || noteContent).trim();
+    if (!rawText) {
+      onToast('Type clinical text before generating.', 'info');
+      return;
+    }
+
+    setGenerateNoteLoading(true);
+    try {
+      const result = await generateNote({
+        template_id: template.id,
+        text: rawText,
+        return_type: 'note',
+      });
+
+      if (result.mode === 'note') {
+        const generatedText =
+          typeof result.note === 'string'
+            ? result.note
+            : JSON.stringify(result.note, null, 2);
+        setNoteContent(generatedText);
+      }
+
+      setPopulateMemoHasBeenCalled(true);
+      setEditMode('write');
+      onToast('Draft generated. Review and save when ready.', 'success');
+    } catch (err) {
+      onToast(getErrorMessage(err), 'error');
+    } finally {
+      setGenerateNoteLoading(false);
+      pendingPopulateMemoSourceRef.current = null;
+    }
+  };
+
   const handleConfirmTemplate = () => {
-    const chosenId = selectedTemplateId;
+    const chosenId = selectedTemplateIdRef.current || selectedTemplateId;
     if (!chosenId) return;
 
     const tmpl = templates.find((t) => t.id === chosenId);
@@ -657,12 +720,19 @@ export const PatientWorkspace: React.FC<Props> = ({
     }
 
     setActiveTemplate(tmpl);
+    selectedTemplateIdRef.current = chosenId;
+    const mode = templateModalMode;
     setTemplateModalOpen(false);
 
-    if (templateModalMode === 'record' && pendingRecordStartRef.current) {
+    if (mode === 'record' && pendingRecordStartRef.current) {
       const startFn = pendingRecordStartRef.current;
       pendingRecordStartRef.current = null;
       startFn();
+      return;
+    }
+
+    if (mode === 'typed') {
+      void generateFromTypedDraft(tmpl);
     }
   };
 
@@ -670,6 +740,9 @@ export const PatientWorkspace: React.FC<Props> = ({
     setNoteContent('');
     setActiveTemplate(null);
     setSelectedTemplateId(null);
+    selectedTemplateIdRef.current = null;
+    pendingPopulateMemoSourceRef.current = null;
+    setPopulateMemoHasBeenCalled(false);
     setEditMode('write');
   };
 
@@ -960,6 +1033,15 @@ export const PatientWorkspace: React.FC<Props> = ({
                   status={status}
                   onSave={handleSaveNote}
                   onDiscard={handleDiscardNote}
+                  activeTemplateLabel={activeTemplate ? (activeTemplate.name || activeTemplate.label || activeTemplate.id) : undefined}
+                  activeTemplateId={activeTemplate?.id}
+                  onChangeTemplate={() => {
+                    pendingPopulateMemoSourceRef.current = null;
+                    void openTemplateModal('save');
+                  }}
+                  onPopulateMemo={handlePopulateMemo}
+                  populateMemoLoading={generateNoteLoading}
+                  canSaveNote={populateMemoHasBeenCalled}
                 />
               </div>
             ) : activeTab === 'chat' && isLg ? (
@@ -1324,6 +1406,7 @@ export const PatientWorkspace: React.FC<Props> = ({
                 onClick={() => {
                   setTemplateModalOpen(false);
                   pendingRecordStartRef.current = null;
+                  pendingPopulateMemoSourceRef.current = null;
                 }}
                 className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition"
               >
@@ -1340,16 +1423,29 @@ export const PatientWorkspace: React.FC<Props> = ({
               )}
 
               {templatesError && !templatesLoading && (
-                <p className="text-xs text-rose-600 px-1">{templatesError}</p>
+                <div className="px-1 space-y-1">
+                  <p className="text-xs text-rose-600">{templatesError}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void openTemplateModal(templateModalMode);
+                    }}
+                    className="text-[11px] font-medium text-teal-700 hover:text-teal-800"
+                  >
+                    Retry
+                  </button>
+                </div>
               )}
 
               {!templatesLoading &&
-                !templatesError &&
                 templates.map((t) => (
                   <button
                     key={t.id}
                     type="button"
-                    onClick={() => setSelectedTemplateId(t.id)}
+                    onClick={() => {
+                      selectedTemplateIdRef.current = t.id;
+                      setSelectedTemplateId(t.id);
+                    }}
                     className={`w-full flex flex-col items-start px-3 py-2 rounded-lg border text-sm transition-all ${
                       selectedTemplateId === t.id
                         ? 'bg-slate-900 border-slate-900 text-white'
@@ -1373,6 +1469,7 @@ export const PatientWorkspace: React.FC<Props> = ({
                 onClick={() => {
                   setTemplateModalOpen(false);
                   pendingRecordStartRef.current = null;
+                  pendingPopulateMemoSourceRef.current = null;
                 }}
                 className="flex-1 px-4 py-2 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition"
               >
@@ -1389,6 +1486,8 @@ export const PatientWorkspace: React.FC<Props> = ({
               >
                 {templateModalMode === 'record'
                   ? 'Continue Recording'
+                  : templateModalMode === 'typed'
+                    ? 'Populate Memo'
                   : 'Continue'}
               </button>
             </div>

@@ -52,6 +52,7 @@ export function soapNotePrompt(transcript: string, customTemplate?: string): str
     You are a medical scribe. Convert this clinical dictation into a clinical note using the EXACT template/format provided below.
     Follow the template's structure, headings, and sections precisely. Use Markdown formatting (## for headings, **bold** for labels).
     Fill in each section of the template with the relevant information from the dictation. If a section has no relevant data, write "N/A" or "Not discussed".
+    Output only the finished note. Do not add any introduction, explanation, or commentary.
 
     TEMPLATE TO FOLLOW:
     ${customTemplate}
@@ -62,6 +63,7 @@ export function soapNotePrompt(transcript: string, customTemplate?: string): str
   }
   return `
     You are a medical scribe. Convert this clinical dictation into a properly formatted SOAP note using Markdown.
+    Output only the finished note. Do not add any introduction, explanation, or commentary.
     
     Dictation transcript:
     "${transcript}"
@@ -73,9 +75,10 @@ export function soapNotePrompt(transcript: string, customTemplate?: string): str
 export function geminiTranscriptionPrompt(customTemplate?: string): string {
   if (customTemplate) {
     return `You are a medical scribe. Transcribe this audio into a clinical note using the EXACT template/format below. Follow the template's structure, headings, and sections precisely. Use Markdown formatting (## for headings, **bold** for labels). Fill in each section with the relevant information. If a section has no data, write "N/A".
+Output only the finished note. Do not add any introduction, explanation, or commentary.
 
 TEMPLATE TO FOLLOW:
 ${customTemplate}`;
   }
-  return 'You are a medical scribe. Transcribe this audio into a SOAP note with ## headers for Subjective, Objective, Assessment, Plan.';
+  return 'You are a medical scribe. Transcribe this audio into a SOAP note with ## headers for Subjective, Objective, Assessment, Plan. Output only the finished note. Do not add any introduction, explanation, or commentary.';
 }

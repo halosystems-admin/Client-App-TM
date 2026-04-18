@@ -7,6 +7,14 @@ export interface StoredUserSettings {
   [key: string]: unknown;
 }
 
+export function extractStoredHaloUserId(settings: StoredUserSettings | null | undefined): string | undefined {
+  const storedId = settings?.haloUserId;
+  if (typeof storedId === 'string' && storedId.trim()) {
+    return storedId.trim();
+  }
+  return undefined;
+}
+
 async function findSettingsFile(token: string, rootId: string): Promise<string | null> {
   const query = encodeURIComponent(
     `'${rootId}' in parents and name='${SETTINGS_FILE_NAME}' and mimeType='application/json' and trashed=false`
@@ -34,16 +42,13 @@ export async function loadStoredUserSettings(token: string): Promise<StoredUserS
   return (await response.json()) as StoredUserSettings;
 }
 
-export async function getStoredHaloUserId(token: string, fallback?: string): Promise<string | undefined> {
+export async function getStoredHaloUserId(token: string): Promise<string | undefined> {
   try {
     const settings = await loadStoredUserSettings(token);
-    const storedId = settings?.haloUserId;
-    if (typeof storedId === 'string' && storedId.trim()) {
-      return storedId.trim();
-    }
+    return extractStoredHaloUserId(settings);
   } catch {
-    // Fall back to the authenticated user if settings cannot be read.
+    // The caller decides how to handle missing or unreadable settings.
   }
 
-  return fallback;
+  return undefined;
 }

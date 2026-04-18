@@ -3,16 +3,24 @@ import type {
   DriveFile,
   LabAlert,
   ChatMessage,
+  GenerateNoteMode,
   UserSettings,
   TemplateItem,
   TemplateListResponse,
+  TemplateSummary,
   GenerateNoteParams,
+  NotesGetTemplatesResponse,
+  NotesGenerateNoteJsonResponse,
+  NotesProxyErrorResponse,
   AdmissionsBoard,
   CalendarEvent,
+  AuthMeResponse,
 } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const NOTES_API_BASE = import.meta.env.VITE_NOTES_API_URL || '';
+let templatesCache: TemplateListResponse | null = null;
+let templatesCachePromise: Promise<TemplateListResponse> | null = null;
 
 // --- Structured Error ---
 export class ApiError extends Error {
@@ -73,7 +81,7 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
 
 // --- AUTH ---
 export const checkAuth = () =>
-  request<{ signedIn: boolean; email?: string; user_id?: string; notesApiAvailable?: boolean }>('/api/auth/me');
+  request<AuthMeResponse>('/api/auth/me');
 export const logout = () => request('/api/auth/logout', { method: 'POST' });
 
 /** Run note conversion scheduler now (txt→docx after 10h, docx→pdf after 24h). Requires jobs to be due. */
@@ -342,66 +350,148 @@ export const askHaloStream = async (
 // --- NOTES / TEMPLATES (via Express proxy when NOTES_API_URL is set) ---
 const NOTES_BASE = `${API_BASE}/api/notes`;
 
-/** Normalize API response to TemplateItem[] (handles { templates: [...] } or array or object of id->template). */
-function normalizeTemplates(raw: unknown): TemplateItem[] {
-  const str = (v: unknown): string | undefined =>
-    v === null || v === undefined ? undefined : String(v);
-  const normalizeArrayTemplates = (arr: unknown[]): TemplateItem[] =>
-    arr
-      .map((t) => {
-        const row = typeof t === 'object' && t !== null ? (t as Record<string, unknown>) : {};
-        const idRaw = row.id;
-        return {
-          id: typeof idRaw === 'string' ? idRaw : String(idRaw ?? ''),
-          name: str(row.name ?? row.label),
-          label: str(row.label ?? row.name),
-          type: row.type as string | undefined,
-          ...row,
-        };
-      })
-      .filter((t) => Boolean(t.id));
+function mapTemplateSummary(item: TemplateSummary): TemplateItem {
+  return {
+    id: item.id,
+    name: item.name,
+    label: item.label,
+    type: item.type,
+  };
+}
 
-  if (Array.isArray(raw)) {
-    return normalizeArrayTemplates(raw);
+export type TemplatesUiStatus =
+  | 'ok'
+  | 'empty'
+  | 'needs-halo-setup'
+  | 'upstream-failure'
+  | 'auth-error'
+  | 'error';
+
+export interface TemplatesUiState {
+  status: TemplatesUiStatus;
+  templates: TemplateListResponse;
+  needsHaloSetup: boolean;
+  message: string | null;
+  retryable: boolean;
+}
+
+function buildTemplatesUiState(
+  status: TemplatesUiStatus,
+  templates: TemplateListResponse,
+  message: string | null
+): TemplatesUiState {
+  return {
+    status,
+    templates,
+    needsHaloSetup: status === 'needs-halo-setup',
+    message,
+    retryable: status === 'upstream-failure' || status === 'error',
+  };
+}
+
+async function fetchTemplatesContract(): Promise<TemplatesUiState> {
+  const res = await fetch(`${NOTES_BASE}/get_templates`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+
+  if (res.status === 401) {
+    window.location.href = '/';
+    throw new ApiError('Not authenticated', 401);
   }
-  if (raw && typeof raw === 'object' && 'templates' in (raw as Record<string, unknown>)) {
-    return normalizeTemplates((raw as { templates: unknown }).templates);
+
+  const contentType = res.headers.get('content-type') || '';
+  const payload = contentType.includes('application/json')
+    ? await res.json().catch(() => ({}))
+    : await res.text().catch(() => '');
+
+  if (!res.ok) {
+    const errorPayload =
+      payload && typeof payload === 'object'
+        ? (payload as NotesProxyErrorResponse & Partial<NotesGetTemplatesResponse>)
+        : null;
+    const errMessage = errorPayload?.error || `Request failed (${res.status})`;
+
+    if (res.status === 424 || res.status === 409 || errorPayload?.needsHaloSetup) {
+      return buildTemplatesUiState('needs-halo-setup', [], errMessage);
+    }
+    if (res.status >= 500) {
+      return buildTemplatesUiState('upstream-failure', [], errMessage);
+    }
+    if (res.status === 401) {
+      return buildTemplatesUiState('auth-error', [], errMessage);
+    }
+
+    return buildTemplatesUiState('error', [], errMessage);
   }
-  if (raw && typeof raw === 'object' && 'data' in (raw as Record<string, unknown>)) {
-    return normalizeTemplates((raw as { data: unknown }).data);
+
+  const data = payload as NotesGetTemplatesResponse;
+  const templates = Array.isArray(data.templates) ? data.templates.map(mapTemplateSummary) : [];
+  templatesCache = templates;
+
+  if (data.needsHaloSetup) {
+    return buildTemplatesUiState('needs-halo-setup', [], 'HALO setup is required before loading templates.');
   }
-  if (raw && typeof raw === 'object' && 'items' in (raw as Record<string, unknown>)) {
-    return normalizeTemplates((raw as { items: unknown }).items);
+  if (data.empty || templates.length === 0) {
+    return buildTemplatesUiState('empty', [], 'No templates found for your HALO account.');
   }
-  if (raw && typeof raw === 'object' && 'results' in (raw as Record<string, unknown>)) {
-    return normalizeTemplates((raw as { results: unknown }).results);
+
+  return buildTemplatesUiState('ok', templates, null);
+}
+
+export async function getTemplatesUiState(forceRefresh = false): Promise<TemplatesUiState> {
+  if (!forceRefresh && templatesCache) {
+    return templatesCache.length > 0
+      ? buildTemplatesUiState('ok', templatesCache, null)
+      : buildTemplatesUiState('empty', [], 'No templates found for your HALO account.');
   }
-  if (raw && typeof raw === 'object') {
-    const obj = raw as Record<string, unknown>;
-    return Object.entries(obj).map(([id, t]) => {
-      const row = typeof t === 'object' && t !== null ? (t as Record<string, unknown>) : {};
-      return {
-        id,
-        name: str(row.name ?? row.label) ?? id,
-        label: str(row.label ?? row.name) ?? id,
-        type: row.type as string | undefined,
-        ...row,
-      };
-    }).filter((t) => Boolean(t.id));
-  }
-  return [];
+
+  return fetchTemplatesContract();
+}
+
+export function getCachedTemplates(): TemplateListResponse | null {
+  return templatesCache;
+}
+
+export function clearTemplatesCache(): void {
+  templatesCache = null;
+  templatesCachePromise = null;
 }
 
 export async function getTemplates(): Promise<TemplateListResponse> {
-  const data = await request<unknown>(`${NOTES_BASE}/get_templates`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
-  return normalizeTemplates(data);
+  if (templatesCache) return templatesCache;
+
+  if (!templatesCachePromise) {
+    templatesCachePromise = getTemplatesUiState().then((state) => {
+      if (state.status === 'ok' || state.status === 'empty') {
+        templatesCache = state.templates;
+        return state.templates;
+      }
+
+      const status = state.status === 'needs-halo-setup'
+        ? 424
+        : state.status === 'upstream-failure'
+          ? 502
+          : state.status === 'auth-error'
+            ? 401
+            : 400;
+      throw new ApiError(state.message || 'Could not load templates.', status);
+    }).finally(() => {
+      templatesCachePromise = null;
+    });
+  }
+
+  return templatesCachePromise;
 }
 
-export async function generateNote(params: GenerateNoteParams): Promise<{ content?: string; blob?: Blob }> {
-  const { return_type } = params;
+export type GenerateNoteClientResult =
+  | { mode: 'note'; note: unknown }
+  | { mode: 'docx'; blob: Blob };
+
+export async function generateNote(params: GenerateNoteParams): Promise<GenerateNoteClientResult> {
+  const returnType: GenerateNoteMode = params.return_type || 'note';
   const res = await fetch(`${NOTES_BASE}/generate_note`, {
     method: 'POST',
     credentials: 'include',
@@ -409,34 +499,41 @@ export async function generateNote(params: GenerateNoteParams): Promise<{ conten
     body: JSON.stringify({
       template_id: params.template_id,
       text: params.text,
-      return_type,
+      return_type: returnType,
     }),
   });
   if (res.status === 401) {
     window.location.href = '/';
     throw new ApiError('Not authenticated', 401);
   }
+
   const contentType = res.headers.get('content-type') || '';
-  if (return_type === 'docx' && (contentType.includes('octet-stream') || contentType.includes('wordprocessing'))) {
+
+  if (returnType === 'docx' && (contentType.includes('octet-stream') || contentType.includes('wordprocessing'))) {
     const blob = await res.blob();
-    return { blob };
+    return { mode: 'docx', blob };
   }
+
   const text = await res.text();
   if (!res.ok) {
     let msg = text;
     try {
-      const j = JSON.parse(text) as { error?: string };
+      const j = JSON.parse(text) as NotesProxyErrorResponse;
       if (j.error) msg = j.error;
     } catch {
       // use text as-is
     }
     throw new ApiError(msg, res.status);
   }
+
   try {
-    const json = JSON.parse(text) as { content?: string };
-    return { content: json.content ?? text };
+    const json = JSON.parse(text) as NotesGenerateNoteJsonResponse;
+    if (json && json.mode === 'note' && 'note' in json) {
+      return { mode: 'note', note: json.note };
+    }
+    return { mode: 'note', note: json };
   } catch {
-    return { content: text };
+    return { mode: 'note', note: text };
   }
 }
 

@@ -1,57 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { TemplateItem } from '../../../../shared/types';
-import { ApiError } from '../../services/api';
-import { getTemplates } from '../../services/api';
-
-function normalizeTemplates(raw: unknown): TemplateItem[] {
-  const str = (v: unknown): string | undefined =>
-    v === null || v === undefined ? undefined : String(v);
-  if (Array.isArray(raw)) {
-    return raw.map((t) => ({
-      id: typeof (t as Record<string, unknown>)?.id === 'string' ? (t as Record<string, unknown>).id as string : String((t as Record<string, unknown>)?.id ?? ''),
-      name: (t as Record<string, unknown>)?.name as string | undefined ?? (t as Record<string, unknown>)?.label as string | undefined,
-      label: (t as Record<string, unknown>)?.label as string | undefined ?? (t as Record<string, unknown>)?.name as string | undefined,
-      type: (t as Record<string, unknown>)?.type as string | undefined,
-      ...(typeof t === 'object' && t !== null ? (t as Record<string, unknown>) : {}),
-    }));
-  }
-  if (raw && typeof raw === 'object' && 'templates' in (raw as Record<string, unknown>)) {
-    return normalizeTemplates((raw as { templates: unknown }).templates);
-  }
-  // Firebase object: { "id1": {...}, "id2": {...} } -> array with id from key
-  if (raw && typeof raw === 'object' && raw !== null) {
-    const obj = raw as Record<string, unknown>;
-    return Object.entries(obj).map(([id, t]) => {
-      const row = typeof t === 'object' && t !== null ? (t as Record<string, unknown>) : {};
-      return {
-        id,
-        name: str(row.name ?? row.label) ?? id,
-        label: str(row.label ?? row.name) ?? id,
-        type: row.type as string | undefined,
-        ...row,
-      } as TemplateItem;
-    });
-  }
-  return [];
-}
+import { getCachedTemplates, getTemplatesUiState } from '../../services/api';
 
 export function CustomTemplates() {
-  const [templates, setTemplates] = useState<TemplateItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [templates, setTemplates] = useState<TemplateItem[]>(() => getCachedTemplates() ?? []);
+  const [loading, setLoading] = useState(() => getCachedTemplates() === null);
   const [error, setError] = useState<string | null>(null);
+  const [emptyMessage, setEmptyMessage] = useState<string>('No templates found for your HALO account.');
 
   const fetchTemplates = async () => {
     try {
-      const templatesArray = await getTemplates();
-      setTemplates(templatesArray);
+      const state = await getTemplatesUiState(true);
+      setTemplates(state.templates);
+      setEmptyMessage(state.message || 'No templates found for your HALO account.');
+      if (state.status === 'needs-halo-setup' || state.status === 'upstream-failure' || state.status === 'error') {
+        setError(state.message || 'Could not load templates. See console for details.');
+      } else {
+        setError(null);
+      }
     } catch (err) {
       console.error('Fetch Error:', err);
-      if (err instanceof ApiError && err.status === 401) {
-        setError('Session expired. Please sign in again to load templates.');
-      } else {
-        setError('Could not load templates. See console for details.');
-      }
+      setError('Could not load templates. See console for details.');
       setTemplates([]);
     } finally {
       setLoading(false);
@@ -59,6 +29,14 @@ export function CustomTemplates() {
   };
 
   useEffect(() => {
+    const cachedTemplates = getCachedTemplates();
+    if (cachedTemplates) {
+      setTemplates(cachedTemplates);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     fetchTemplates();
@@ -75,17 +53,38 @@ export function CustomTemplates() {
 
   if (error) {
     return (
-      <p className="text-sm text-red-600 p-4" role="alert">
-        {error}
-      </p>
+      <div className="p-4 space-y-2" role="alert">
+        <p className="text-sm text-red-600">{error}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            void fetchTemplates();
+          }}
+          className="text-xs font-medium text-teal-700 hover:text-teal-800"
+        >
+          Retry
+        </button>
+      </div>
     );
   }
 
   if (templates.length === 0) {
     return (
-      <p className="text-sm text-slate-500 p-4">
-        No templates found for your account.
-      </p>
+      <div className="p-4 space-y-2">
+        <p className="text-sm text-slate-500">{emptyMessage}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoading(true);
+            void fetchTemplates();
+          }}
+          className="text-xs font-medium text-teal-700 hover:text-teal-800"
+        >
+          Retry
+        </button>
+      </div>
     );
   }
 
