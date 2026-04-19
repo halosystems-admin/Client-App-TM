@@ -215,10 +215,9 @@ export const PatientWorkspace: React.FC<Props> = ({
   useEffect(() => {
     const interval = setInterval(() => {
       silentRefresh();
-      onDataChange();
     }, 30_000);
     return () => clearInterval(interval);
-  }, [silentRefresh, onDataChange]);
+  }, [silentRefresh]);
 
   // Clean up upload progress interval on unmount
   useEffect(() => {
@@ -851,7 +850,6 @@ export const PatientWorkspace: React.FC<Props> = ({
 
       setEditingFile(null);
       await loadFolderContents(currentFolderId);
-      onDataChange();
       onToast('Item renamed.', 'success');
     } catch (err) {
       onToast(getErrorMessage(err), 'error');
@@ -864,7 +862,6 @@ export const PatientWorkspace: React.FC<Props> = ({
       await deleteFile(fileToDelete.id);
       setFileToDelete(null);
       await loadFolderContents(currentFolderId);
-      onDataChange();
       onToast('File moved to trash.', 'success');
     } catch (err) {
       onToast(getErrorMessage(err), 'error');

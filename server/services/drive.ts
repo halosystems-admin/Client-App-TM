@@ -587,7 +587,9 @@ export function sanitizeString(value: unknown, maxLength = 200): string {
 }
 
 export function isValidDate(dateStr: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(dateStr) && !isNaN(Date.parse(dateStr));
+  // Accept both YYYY-MM-DD and YYYY/MM/DD formats
+  const normalized = dateStr.replace(/\//g, '-');
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) && !isNaN(Date.parse(normalized));
 }
 
 export function isValidSex(sex: string): sex is 'M' | 'F' {

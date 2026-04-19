@@ -68,8 +68,9 @@ export function getOpenTaskCount(card: AdmissionsCard): number {
 export function getTaskSummary(card: AdmissionsCard): string {
   const openTasks = getOpenTaskCount(card);
   const totalTasks = card.tasks.length;
+  const completedTasks = totalTasks - openTasks;
   if (totalTasks === 0) return 'No tasks';
-  return `${openTasks}/${totalTasks} tasks complete`;
+  return `${completedTasks}/${totalTasks} tasks complete`;
 }
 
 function getUrgencyRank(card: AdmissionsCard): number {

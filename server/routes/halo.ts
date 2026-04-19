@@ -259,4 +259,48 @@ router.post('/confirm-and-send', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/halo/extract-patient-sticker
+// Body: { base64: string }
+// Proxies to external Halo Functions API: POST /extract_patient_sticker
+router.post('/extract-patient-sticker', async (req: Request, res: Response) => {
+  try {
+    const { base64 } = req.body as { base64?: string };
+
+    if (!base64 || typeof base64 !== 'string') {
+      res.status(400).json({ error: 'base64 is required.' });
+      return;
+    }
+
+    const response = await fetch(`${config.haloApiBaseUrl}/extract_patient_sticker`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: base64,
+        contentType: 'image',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Halo extract_patient_sticker returned ${response.status}:`, errorText);
+      res.status(response.status).json({
+        error: `Failed to extract patient sticker (${response.status})`,
+      });
+      return;
+    }
+
+    const data = await response.json() as { patient_name?: string; patient_id?: string };
+    res.json({
+      patient_name: data.patient_name || '',
+      patient_id: data.patient_id || '',
+    });
+  } catch (err) {
+    console.error('Halo extract-patient-sticker error:', err);
+    const message = err instanceof Error ? err.message : 'Failed to extract patient sticker.';
+    res.status(500).json({ error: message });
+  }
+});
+
 export default router;

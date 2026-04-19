@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, LayoutPanelTop, Plus, Search, Settings } from 'lucide-react';
+import { ArrowLeft, LayoutPanelTop, Plus, Search, Settings, Camera } from 'lucide-react';
 import type { AdmissionsViewMode } from '../../../../shared/types';
 
 const VIEW_OPTIONS: {
@@ -20,6 +20,7 @@ interface Props {
   saving: boolean;
   updatedAt: string;
   onAddPatient: () => void;
+  onCreatePatientFromSticker?: () => void;
   currentView?: AdmissionsViewMode;
   onViewChange?: (view: AdmissionsViewMode) => void;
   onSettingsClick?: () => void;
@@ -32,6 +33,7 @@ export const AdmissionsBoardHeader: React.FC<Props> = ({
   saving,
   updatedAt,
   onAddPatient,
+  onCreatePatientFromSticker,
   currentView = 'board',
   onViewChange,
   onSettingsClick,
@@ -80,14 +82,27 @@ export const AdmissionsBoardHeader: React.FC<Props> = ({
               className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white"
             />
           </label>
-          <button
-            type="button"
-            onClick={onAddPatient}
-            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-cyan-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-cyan-600"
-          >
-            <Plus className="h-4 w-4" />
-            Add patient
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onAddPatient}
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-cyan-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-cyan-600"
+            >
+              <Plus className="h-4 w-4" />
+              Add patient
+            </button>
+            {onCreatePatientFromSticker && (
+              <button
+                type="button"
+                onClick={onCreatePatientFromSticker}
+                className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-4 text-sm font-semibold text-cyan-700 shadow-sm transition hover:bg-cyan-100"
+                title="Create patient from sticker scan"
+              >
+                <Camera className="h-4 w-4" />
+                Scan sticker
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

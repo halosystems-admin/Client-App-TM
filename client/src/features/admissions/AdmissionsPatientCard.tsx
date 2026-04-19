@@ -188,7 +188,7 @@ export const AdmissionsPatientCardPreview: React.FC<{
         )}
       </div>
       <div className="mt-2 border-t border-slate-100 pt-2 text-[11px] font-medium text-cyan-600">
-        {card.tasks.length > 0 ? `${card.tasks.length - completedTasks}/${card.tasks.length} tasks complete` : 'No tasks'}
+        {card.tasks.length > 0 ? `${completedTasks}/${card.tasks.length} tasks complete` : 'No tasks'}
       </div>
     </div>
   );

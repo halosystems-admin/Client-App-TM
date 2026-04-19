@@ -1,7 +1,8 @@
 import React from 'react';
+import { Clock3 } from 'lucide-react';
 import type { AdmissionsCard } from '../../../../shared/types';
 import { AdmissionsPatientCard } from './AdmissionsPatientCard';
-import { groupCardsForTodayView } from './admissionsUtils';
+import { groupCardsForTodayView, formatTimeInStage } from './admissionsUtils';
 
 interface TodayViewProps {
   cards: AdmissionsCard[];
@@ -45,11 +46,15 @@ export default function TodayView({
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-slate-900 truncate">{card.patientName}</p>
                           <p className="text-sm text-slate-600 truncate">{card.diagnosis}</p>
-                          {card.tasks.length > 0 && (
-                            <p className="text-xs text-slate-500 mt-1">
-                              {card.tasks.filter((t) => !t.done).length}/{card.tasks.length} tasks complete
+                          <div className="flex items-center gap-2 mt-2">
+                            <p className="text-xs text-slate-500">
+                              {card.tasks.filter((t) => t.done).length}/{card.tasks.length} tasks complete
                             </p>
-                          )}
+                            <span className="inline-flex items-center gap-1 rounded-md bg-cyan-50 px-2 py-0.5 font-medium text-cyan-700 text-xs">
+                              <Clock3 className="h-3 w-3 shrink-0" />
+                              {formatTimeInStage(card.enteredColumnAt, now)}
+                            </span>
+                          </div>
                         </div>
                         <div className="flex gap-1 flex-shrink-0">
                           {onTriageColorChange && (

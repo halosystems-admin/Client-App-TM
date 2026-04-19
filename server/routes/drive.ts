@@ -262,8 +262,14 @@ router.get('/scheduler-status', async (_req: Request, res: Response) => {
 // POST /patients
 router.post('/patients', async (req: Request, res: Response) => {
   try {
+    let dob = sanitizeString(req.body.dob);
+    
+    // Normalize date format from YYYY/MM/DD to YYYY-MM-DD
+    if (dob) {
+      dob = dob.replace(/\//g, '-');
+    }
+    
     const name = sanitizeString(req.body.name);
-    const dob = sanitizeString(req.body.dob);
     const sex = sanitizeString(req.body.sex);
 
     if (!name || name.length < 2) {
@@ -271,7 +277,7 @@ router.post('/patients', async (req: Request, res: Response) => {
       return;
     }
     if (!dob || !isValidDate(dob)) {
-      res.status(400).json({ error: 'Invalid date of birth. Use YYYY-MM-DD format.' });
+      res.status(400).json({ error: 'Invalid date of birth. Use YYYY/MM/DD format.' });
       return;
     }
     if (!isValidSex(sex)) {
@@ -323,15 +329,20 @@ router.patch('/patients/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
 
     const name = req.body.name ? sanitizeString(req.body.name) : undefined;
-    const dob = req.body.dob ? sanitizeString(req.body.dob) : undefined;
+    let dob = req.body.dob ? sanitizeString(req.body.dob) : undefined;
     const sex = req.body.sex ? sanitizeString(req.body.sex) : undefined;
+
+    // Normalize date format from YYYY/MM/DD to YYYY-MM-DD
+    if (dob) {
+      dob = dob.replace(/\//g, '-');
+    }
 
     if (name !== undefined && name.length < 2) {
       res.status(400).json({ error: 'Patient name must be at least 2 characters.' });
       return;
     }
     if (dob !== undefined && !isValidDate(dob)) {
-      res.status(400).json({ error: 'Invalid date of birth. Use YYYY-MM-DD format.' });
+      res.status(400).json({ error: 'Invalid date of birth. Use YYYY/MM/DD format.' });
       return;
     }
     if (sex !== undefined && !isValidSex(sex)) {

@@ -163,22 +163,23 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
           <div className="prose prose-sm prose-slate max-w-none">{renderMarkdown(noteContent)}</div>
         </div>
       )}
-      <div className="shrink-0 bg-slate-50 border-t border-slate-200 p-4 flex justify-start gap-3">
-        <button onClick={onDiscard} disabled={!noteContent} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-6 py-2 font-medium text-slate-600 transition-all hover:bg-slate-100 disabled:opacity-50">
+      <div className="shrink-0 bg-slate-50 border-t border-slate-200 p-2 sm:p-3 flex justify-start gap-2 flex-wrap">
+        <button onClick={onDiscard} disabled={!noteContent} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-600 transition-all hover:bg-slate-100 disabled:opacity-50">
           Discard
         </button>
         {onPopulateMemo && (
           <button
             onClick={onPopulateMemo}
             disabled={populateMemoLoading || !hasDraft}
-            className="flex items-center gap-2 rounded-lg border border-teal-200 bg-white px-6 py-2 font-medium text-teal-700 transition-all hover:bg-teal-50 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg border border-teal-200 bg-white px-3 py-1.5 text-xs sm:text-sm font-medium text-teal-700 transition-all hover:bg-teal-50 disabled:opacity-50"
           >
-            <Wand2 className={`w-4 h-4 ${populateMemoLoading ? 'animate-spin' : ''}`} />
-            {populateMemoLoading ? 'Populating...' : 'Populate Memo'}
+            <Wand2 className={`w-3.5 h-3.5 ${populateMemoLoading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Populate Memo</span>
+            <span className="sm:hidden">Populate</span>
           </button>
         )}
-        <button onClick={onSave} disabled={status === AppStatus.FILING || status === AppStatus.SAVING || !noteContent || !canSaveNote} className="flex items-center gap-2 bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 disabled:opacity-50 font-medium transition-all shadow-sm">
-          <Save className="w-4 h-4" /> {status === AppStatus.FILING ? 'Filing...' : 'Save Note'}
+        <button onClick={onSave} disabled={status === AppStatus.FILING || status === AppStatus.SAVING || !noteContent || !canSaveNote} className="flex items-center gap-1.5 border border-teal-200 bg-white text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-50 disabled:opacity-50 text-xs sm:text-sm font-medium transition-all">
+          <Save className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{status === AppStatus.FILING ? 'Filing...' : 'Save Note'}</span><span className="sm:hidden">{status === AppStatus.FILING ? 'Filing...' : 'Save'}</span>
         </button>
       </div>
     </div>

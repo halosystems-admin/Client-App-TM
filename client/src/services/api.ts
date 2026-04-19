@@ -259,6 +259,14 @@ export const transcribeToSOAP = async (audioBase64: string, mimeType: string, cu
   return data.soapNote;
 };
 
+// --- HALO EXTRACTION ---
+export const extractPatientStickerFromImage = async (base64: string): Promise<{ patient_name: string; patient_id: string }> => {
+  return request<{ patient_name: string; patient_id: string }>('/api/halo/extract-patient-sticker', {
+    method: 'POST',
+    body: JSON.stringify({ base64 }),
+  });
+};
+
 export const searchPatientsByConcept = async (
   query: string,
   patients: Patient[],

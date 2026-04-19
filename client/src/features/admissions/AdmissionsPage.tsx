@@ -19,7 +19,7 @@ import type {
   TriageColor,
 } from '../../../../shared/types';
 import { ApiError, fetchAdmissionsBoard, saveAdmissionsBoard } from '../../services/api';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, Camera } from 'lucide-react';
 import { AdmissionsAddPatientModal } from './AdmissionsAddPatientModal';
 import { AdmissionsBoardHeader } from './AdmissionsBoardHeader';
 import { AdmissionsCardDrawer } from './AdmissionsCardDrawer';
@@ -30,6 +30,7 @@ import MoveToModal from './MoveToModal';
 import TriageColorPicker from './TriageColorPicker';
 import AdmissionsSettingsModal from './AdmissionsSettingsModal';
 import AdmissionsConflictDialog from './AdmissionsConflictDialog';
+import { PatientStickerScanModal } from '../../components/PatientStickerScanModal';
 import { primeAdmissionsBoard } from './admissionsBoardResource';
 import {
   type CardDrawerState,
@@ -72,6 +73,7 @@ export const AdmissionsPage: React.FC<Props> = ({
   const [renamingColumnId, setRenamingColumnId] = useState<string | null>(null);
   const [renameColumnValue, setRenameColumnValue] = useState('');
   const [showAddPatientModal, setShowAddPatientModal] = useState(false);
+  const [showStickerScanModal, setShowStickerScanModal] = useState(false);
   const [newCardColumnId, setNewCardColumnId] = useState<string | null>(null);
   const [newCardPatientId, setNewCardPatientId] = useState('');
   const [newCardSearch, setNewCardSearch] = useState('');
@@ -642,6 +644,7 @@ export const AdmissionsPage: React.FC<Props> = ({
         currentView={currentView}
         onViewChange={setCurrentView}
         onAddPatient={() => handleOpenAddPatient(primaryAddColumnId)}
+        onCreatePatientFromSticker={() => setShowStickerScanModal(true)}
         onSettingsClick={() => setShowSettingsModal(true)}
       />
 
@@ -892,6 +895,15 @@ export const AdmissionsPage: React.FC<Props> = ({
         isOpen={conflictDialogOpen}
         onKeepLocal={handleConflictKeepLocal}
         onReloadLatest={handleConflictReloadLatest}
+      />
+
+      <PatientStickerScanModal
+        open={showStickerScanModal}
+        onClose={() => setShowStickerScanModal(false)}
+        onSuccess={() => {
+          setShowStickerScanModal(false);
+        }}
+        onToast={onToast}
       />
     </div>
   );
