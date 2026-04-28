@@ -291,23 +291,80 @@ router.post('/extract-patient-sticker', async (req: Request, res: Response) => {
       return;
     }
 
-    const data = await response.json() as {
-      patient_name?: string;
-      patient_id?: string;
-      dob?: string;
-      date_of_birth?: string;
-      patient_dob?: string;
-      gender?: string;
-      sex?: string;
-      patient_gender?: string;
-      patient_sex?: string;
+    const data = await response.json() as Record<string, unknown>;
+
+    // Temporary diagnostic log: capture upstream extraction payload shape/values (no image payload).
+    console.log('[Halo] extract_patient_sticker raw response:', data);
+
+    const firstString = (source: Record<string, unknown>, keys: string[]): string => {
+      for (const key of keys) {
+        const value = source[key];
+        if (typeof value === 'string' && value.trim()) {
+          return value.trim();
+        }
+      }
+      return '';
     };
 
-    const dob = data.dob || data.date_of_birth || data.patient_dob || '';
-    const gender = data.gender || data.sex || data.patient_gender || data.patient_sex || '';
+    const normalizeMissing = (value: string): string => {
+      const normalized = value.trim().toLowerCase();
+      if (!normalized || ['not_found', 'unknown', 'n/a', 'na', 'none', 'null', '-'].includes(normalized)) {
+        return '';
+      }
+      return value.trim();
+    };
+
+    const normalizeDob = (value: string): string => {
+      const cleaned = normalizeMissing(value);
+      if (!cleaned) return '';
+
+      // Convert DD.MM.YYYY (and common DMY delimiters) to YYYY-MM-DD.
+      const dmy = cleaned.match(/^(\d{2})[./-](\d{2})[./-](\d{4})$/);
+      if (dmy) {
+        return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+      }
+
+      // Preserve ISO-ish values while normalizing separator.
+      const ymd = cleaned.match(/^(\d{4})[./-](\d{2})[./-](\d{2})$/);
+      if (ymd) {
+        return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+      }
+
+      return cleaned;
+    };
+
+    const normalizeGender = (value: string): string => {
+      const cleaned = normalizeMissing(value);
+      if (!cleaned) return '';
+      const normalized = cleaned.toLowerCase();
+      if (normalized === 'm' || normalized === 'male') return 'Male';
+      if (normalized === 'f' || normalized === 'female') return 'Female';
+      return cleaned;
+    };
+
+    const patientName = firstString(data, ['patient_name', 'patientName', 'name', 'full_name', 'fullName']);
+    const patientIdRaw = firstString(data, [
+      'patient_id',
+      'patientId',
+      'id',
+      'case',
+      'case_number',
+      'caseNo',
+      'pmi',
+      'pmi_number',
+      'mrn',
+      'hospital_number',
+    ]);
+    const dobRaw = firstString(data, ['dob', 'date_of_birth', 'dateOfBirth', 'birth_date', 'patient_dob']);
+    const genderRaw = firstString(data, ['gender', 'sex', 'patient_gender', 'patient_sex']);
+
+    const patientId = normalizeMissing(patientIdRaw);
+    const dob = normalizeDob(dobRaw);
+    const gender = normalizeGender(genderRaw);
+
     res.json({
-      patient_name: data.patient_name || '',
-      patient_id: data.patient_id || '',
+      patient_name: patientName,
+      patient_id: patientId,
       dob,
       gender,
     });

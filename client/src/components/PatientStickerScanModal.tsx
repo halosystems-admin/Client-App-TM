@@ -101,20 +101,26 @@ export const PatientStickerScanModal: React.FC<Props> = ({
           // Call extraction API
           const result = await extractPatientStickerFromImage(base64);
 
-          if (!result.patient_name || !result.patient_id) {
+          const extractedGiven = (result.given_name || '').trim();
+          const extractedSurname = (result.surname || '').trim();
+          const extractedFullName =
+            (result.patient_name || '').trim() ||
+            `${extractedGiven} ${extractedSurname}`.trim();
+
+          if (!extractedFullName) {
             setError('No patient data found in sticker. Please try another image.');
             setImagePreview(null);
             setLoading(false);
             return;
           }
 
-          setExtractedPatientName(result.patient_name);
-          setExtractedPatientId(result.patient_id);
+          setExtractedPatientName(extractedFullName);
+          setExtractedPatientId(result.patient_id || '');
 
           // Parse name
-          const { givenName: parsedGiven, surname: parsedSurname } = parseName(result.patient_name);
-          setGivenName(parsedGiven);
-          setSurname(parsedSurname);
+          const parsed = parseName(extractedFullName);
+          setGivenName(extractedGiven || parsed.givenName);
+          setSurname(extractedSurname || parsed.surname);
 
           // Use only extracted DOB/gender. If absent, leave blank for user to fill.
           const finalDob = normalizeDob(result.dob) || '';
