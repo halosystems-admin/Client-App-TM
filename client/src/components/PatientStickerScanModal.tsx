@@ -47,6 +47,40 @@ export const PatientStickerScanModal: React.FC<Props> = ({
     return { givenName, surname };
   };
 
+  const normalizeDob = (value?: string): string => {
+    if (!value) return '';
+
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+
+    const isoMatch = trimmed.match(/^(\d{4})[-/](\d{2})[-/](\d{2})$/);
+    if (isoMatch) {
+      return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+    }
+
+    const dmyMatch = trimmed.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/);
+    if (dmyMatch) {
+      return `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+    }
+
+    return trimmed;
+  };
+
+  const normalizeSex = (value?: string): 'M' | 'F' | null => {
+    if (!value) return null;
+
+    const normalized = value.trim().toLowerCase();
+    if (['m', 'male', 'man', 'boy'].includes(normalized)) {
+      return 'M';
+    }
+
+    if (['f', 'female', 'woman', 'girl'].includes(normalized)) {
+      return 'F';
+    }
+
+    return null;
+  };
+
   const handleFileSelect = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       setError('Please select an image file.');
@@ -81,8 +115,27 @@ export const PatientStickerScanModal: React.FC<Props> = ({
           const { givenName: parsedGiven, surname: parsedSurname } = parseName(result.patient_name);
           setGivenName(parsedGiven);
           setSurname(parsedSurname);
-          setDob('');
-          setSex('M');
+
+          // Prefer DOB/gender from the extraction result; if missing and we have a patient_id,
+          // fetch the existing patient record and use its DOB/gender when available.
+          let finalDob = normalizeDob(result.dob);
+          let finalSex = normalizeSex(result.gender) || null;
+          if ((!finalDob || finalDob === '') && result.patient_id) {
+            try {
+              const existing = await getPatient(result.patient_id);
+              if (existing && existing.dob && existing.dob !== 'Unknown') {
+                finalDob = normalizeDob(existing.dob);
+              }
+              if (!finalSex && existing && existing.sex) {
+                finalSex = existing.sex as 'M' | 'F';
+              }
+            } catch (err) {
+              // ignore fetch errors and fall back to extraction values
+            }
+          }
+
+          setDob(finalDob);
+          setSex(finalSex || 'M');
 
           setStep('confirm');
         } catch (err) {

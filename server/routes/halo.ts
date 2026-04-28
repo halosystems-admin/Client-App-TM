@@ -291,10 +291,25 @@ router.post('/extract-patient-sticker', async (req: Request, res: Response) => {
       return;
     }
 
-    const data = await response.json() as { patient_name?: string; patient_id?: string };
+    const data = await response.json() as {
+      patient_name?: string;
+      patient_id?: string;
+      dob?: string;
+      date_of_birth?: string;
+      patient_dob?: string;
+      gender?: string;
+      sex?: string;
+      patient_gender?: string;
+      patient_sex?: string;
+    };
+
+    const dob = data.dob || data.date_of_birth || data.patient_dob || '';
+    const gender = data.gender || data.sex || data.patient_gender || data.patient_sex || '';
     res.json({
       patient_name: data.patient_name || '',
       patient_id: data.patient_id || '',
+      dob,
+      gender,
     });
   } catch (err) {
     console.error('Halo extract-patient-sticker error:', err);

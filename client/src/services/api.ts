@@ -126,6 +126,9 @@ export const createPatient = (name: string, dob: string, sex: 'M' | 'F') =>
     body: JSON.stringify({ name, dob, sex }),
   });
 
+export const getPatient = (id: string) =>
+  request<Patient>(`/api/drive/patients/${id}`);
+
 export const updatePatient = (id: string, updates: { name?: string; dob?: string; sex?: string }) =>
   request(`/api/drive/patients/${id}`, {
     method: 'PATCH',
@@ -260,8 +263,10 @@ export const transcribeToSOAP = async (audioBase64: string, mimeType: string, cu
 };
 
 // --- HALO EXTRACTION ---
-export const extractPatientStickerFromImage = async (base64: string): Promise<{ patient_name: string; patient_id: string }> => {
-  return request<{ patient_name: string; patient_id: string }>('/api/halo/extract-patient-sticker', {
+export const extractPatientStickerFromImage = async (
+  base64: string
+): Promise<{ patient_name: string; patient_id: string; dob?: string; gender?: string }> => {
+  return request<{ patient_name: string; patient_id: string; dob?: string; gender?: string }>('/api/halo/extract-patient-sticker', {
     method: 'POST',
     body: JSON.stringify({ base64 }),
   });

@@ -221,6 +221,26 @@ router.get('/patients', async (req: Request, res: Response) => {
   }
 });
 
+// GET /patients/:id - fetch single patient metadata
+router.get('/patients/:id', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const { id } = req.params;
+
+    const file = await driveRequest(token, `/files/${id}?fields=id,name,appProperties,createdTime`);
+    if (!file || !file.id) {
+      res.status(404).json({ error: 'Patient not found' });
+      return;
+    }
+
+    const patient = parsePatientFolder(file);
+    res.json(patient);
+  } catch (err) {
+    console.error('Fetch patient error:', err);
+    res.status(500).json({ error: 'Failed to fetch patient.' });
+  }
+});
+
 // POST /run-scheduler — run conversion jobs immediately (no wait for 5-min interval)
 router.post('/run-scheduler', async (_req: Request, res: Response) => {
   try {
