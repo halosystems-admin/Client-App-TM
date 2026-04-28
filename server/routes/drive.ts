@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/requireAuth';
 import { config } from '../config';
 import {
   driveRequest,
+  type DriveFileRaw,
   getHaloRootFolder,
   getOrCreatePatientNotesFolder,
   getOrCreateFolderChain,
@@ -233,7 +234,16 @@ router.get('/patients/:id', async (req: Request, res: Response) => {
       return;
     }
 
-    const patient = parsePatientFolder(file);
+    const rawDriveFile: DriveFileRaw = {
+      id: file.id,
+      name: file.name || '',
+      mimeType: file.mimeType || 'application/vnd.google-apps.folder',
+      webViewLink: file.webViewLink,
+      appProperties: file.appProperties,
+      createdTime: file.createdTime,
+    };
+
+    const patient = parsePatientFolder(rawDriveFile);
     res.json(patient);
   } catch (err) {
     console.error('Fetch patient error:', err);
