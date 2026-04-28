@@ -32,7 +32,7 @@ export const PatientStickerScanModal: React.FC<Props> = ({
   const [givenName, setGivenName] = useState('');
   const [surname, setSurname] = useState('');
   const [dob, setDob] = useState('');
-  const [sex, setSex] = useState<'M' | 'F'>('M');
+  const [sex, setSex] = useState<'M' | 'F' | ''>('');
 
   if (!open) return null;
 
@@ -116,26 +116,12 @@ export const PatientStickerScanModal: React.FC<Props> = ({
           setGivenName(parsedGiven);
           setSurname(parsedSurname);
 
-          // Prefer DOB/gender from the extraction result; if missing and we have a patient_id,
-          // fetch the existing patient record and use its DOB/gender when available.
-          let finalDob = normalizeDob(result.dob);
-          let finalSex = normalizeSex(result.gender) || null;
-          if ((!finalDob || finalDob === '') && result.patient_id) {
-            try {
-              const existing = await getPatient(result.patient_id);
-              if (existing && existing.dob && existing.dob !== 'Unknown') {
-                finalDob = normalizeDob(existing.dob);
-              }
-              if (!finalSex && existing && existing.sex) {
-                finalSex = existing.sex as 'M' | 'F';
-              }
-            } catch (err) {
-              // ignore fetch errors and fall back to extraction values
-            }
-          }
+          // Use only extracted DOB/gender. If absent, leave blank for user to fill.
+          const finalDob = normalizeDob(result.dob) || '';
+          const finalSex = normalizeSex(result.gender) || '';
 
           setDob(finalDob);
-          setSex(finalSex || 'M');
+          setSex(finalSex as 'M' | 'F' | '');
 
           setStep('confirm');
         } catch (err) {
@@ -174,7 +160,7 @@ export const PatientStickerScanModal: React.FC<Props> = ({
   };
 
   const handleSubmit = async () => {
-    if (!givenName.trim() || !dob) {
+    if (!givenName.trim() || !dob || !sex) {
       onToast('Please fill in all required fields.', 'error');
       return;
     }
@@ -192,7 +178,7 @@ export const PatientStickerScanModal: React.FC<Props> = ({
       }
 
       // Create patient using existing API
-      const patient = await createPatient(fullName, dob, sex);
+      const patient = await createPatient(fullName, dob, sex as 'M' | 'F');
       setStep('success');
       onSuccess(patient.id);
       onToast(`Patient "${fullName}" created successfully.`, 'success');
