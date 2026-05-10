@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { config } from '../config';
+import { getScribePool } from '../services/scribe/db';
 
 const router = Router();
 
@@ -159,15 +160,67 @@ router.get('/me', (req: Request, res: Response) => {
   if (req.session.accessToken) {
     const googleUserId = req.session.userId || '';
     const appUserId = req.session.userId || req.session.userEmail || '';
-    res.json({
-      signedIn: true,
-      email: req.session.userEmail,
-      googleUserId,
-      appUserId,
-      // Backward-compatible alias consumed by existing clients.
-      user_id: appUserId,
-      notesApiAvailable: !!config.notesApiUrl,
-    });
+    void (async () => {
+      let practiceId: string | undefined;
+      try {
+        const pool = getScribePool();
+
+        const defaultResult = await pool.query<{ practice_id: string }>(
+          `
+            SELECT practice_id::text AS practice_id
+            FROM scribe_templates
+            WHERE is_default = true
+            ORDER BY updated_at DESC
+            LIMIT 1
+          `
+        );
+
+        const defaultPracticeId = defaultResult.rows[0]?.practice_id?.trim();
+        if (defaultPracticeId) {
+          practiceId = defaultPracticeId;
+        } else {
+          const distinctResult = await pool.query<{ practice_id: string }>(
+            `
+              SELECT DISTINCT practice_id::text AS practice_id
+              FROM scribe_templates
+              WHERE practice_id IS NOT NULL
+              LIMIT 2
+            `
+          );
+
+          if (distinctResult.rows.length === 1) {
+            const onlyPracticeId = distinctResult.rows[0]?.practice_id?.trim();
+            if (onlyPracticeId) {
+              practiceId = onlyPracticeId;
+            }
+          }
+        }
+      } catch {
+        // Best-effort only; auth/me remains available even if scribe DB is not ready.
+      }
+
+      if (!practiceId) {
+        const configuredPracticeId = config.scribePracticeId.trim();
+        if (configuredPracticeId) {
+          practiceId = configuredPracticeId;
+        }
+      }
+
+      res.json({
+        signedIn: true,
+        email: req.session.userEmail,
+        googleUserId,
+        appUserId,
+        practiceId,
+        // Backward-compatible alias consumed by existing clients.
+        user_id: appUserId,
+        notesApiAvailable: !!config.notesApiUrl,
+      });
+      console.log('[auth/me] response built', {
+        hasPracticeId: Boolean(practiceId),
+        practiceId,
+      });
+    })();
   } else {
     res.json({ signedIn: false });
   }

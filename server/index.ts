@@ -15,9 +15,11 @@ import notesProxyRoutes from './routes/notesProxy';
 import calendarRoutes from './routes/calendar';
 import haloRoutes from './routes/halo';
 import requestTemplateRoutes from './routes/requestTemplate';
+import scribeRoutes from './routes/scribe';
 import { requireAuth } from './middleware/requireAuth';
 import { startScheduler } from './jobs/scheduler';
 import { attachTranscribeWebSocket } from './ws/transcribe';
+import { startDocumentSyncWorker } from './workers/documentSyncWorker';
 
 const app = express();
 
@@ -55,8 +57,8 @@ function createSessionStore(): session.Store | undefined {
 
 // --- Global Rate Limiter ---
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 300, 
+  windowMs: 15 * 60 * 1000,
+  max: 300,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please try again later.' },
@@ -64,8 +66,8 @@ const globalLimiter = rateLimit({
 
 // --- AI Route Rate Limiter (stricter) ---
 const aiLimiter = rateLimit({
-  windowMs: 60 * 1000, 
-  max: 20, 
+  windowMs: 60 * 1000,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'AI rate limit reached. Please wait before trying again.' },
@@ -116,6 +118,7 @@ app.use('/api/notes', requireAuth, notesProxyRoutes);
 app.use('/api/calendar', requireAuth, calendarRoutes);
 app.use('/api/halo', haloRoutes);
 app.use('/api/request-template', requestTemplateRoutes);
+app.use('/api/scribe', scribeRoutes);
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {
@@ -155,4 +158,5 @@ attachTranscribeWebSocket(server);
 server.listen(config.port, () => {
   console.log(`Halo server running on port ${config.port} (${config.isProduction ? 'production' : 'development'})`);
   startScheduler();
+  startDocumentSyncWorker(); // <-- THIS IS THE MAGIC LINE WE ADDED
 });

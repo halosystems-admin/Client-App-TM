@@ -15,18 +15,18 @@
     "build:server": "tsc",
     "build:client": "npm run install:client && npm run build --prefix client",
     "smoke:api": "node scripts/smoke-api.js",
+    "verify:scribe-e2e": "node scripts/verify-scribe-rebuild-e2e.js",
     "test:calendar": "ts-node server/tests/calendar-normalise.test.ts",
     "test:calendar:routes": "ts-node server/tests/calendar-route-compat.test.ts",
     "start": "if [ \"$IS_FRONTEND\" = \"true\" ]; then cd client && npm start; else node dist/server/index.js; fi"
   },
-  
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "@deepgram/sdk": "^4.11.3",
-    "@google/generative-ai": "^0.24.1",
+    "@google/genai": "^1.50.1",
     "@types/helmet": "^0.0.48",
     "connect-pg-simple": "^10.0.0",
     "cors": "^2.8.6",

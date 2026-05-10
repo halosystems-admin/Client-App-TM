@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
+import path from 'path';
 
-dotenv.config();
+// Load the backend env from the project root so startup is not cwd-dependent.
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 // --- Required Environment Variables ---
 const REQUIRED_ENV = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GEMINI_API_KEY', 'SESSION_SECRET'] as const;
@@ -52,6 +54,7 @@ export const config = {
   haloUserId: process.env.HALO_USER_ID || 'cae6877e-0fbe-4ea1-acce-39957e7575bc',
   haloMobileUserId: process.env.HALO_MOBILE_USER_ID || 'fcb5cfec-e10e-4c3a-bd44-064a788a6243',
   haloMobileTemplateId: process.env.HALO_MOBILE_TEMPLATE_ID || 'report',
+  scribePracticeId: process.env.SCRIBE_PRACTICE_ID || '',
 
   // Template request email (optional)
   adminEmail: process.env.ADMIN_EMAIL || 'admin@halo.africa',
