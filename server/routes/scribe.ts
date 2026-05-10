@@ -66,7 +66,8 @@ type GenerateScribeRequestInput = Omit<GenerateScribeRequest, 'practiceId'> & {
 async function resolvePracticeId(inputPracticeId?: string): Promise<string> {
   const bodyPracticeId = typeof inputPracticeId === 'string' ? inputPracticeId.trim() : '';
 
-  if (bodyPracticeId) {
+  // req.body.practiceId is local/E2E convenience only; production must not trust it.
+  if (process.env.NODE_ENV !== 'production' && bodyPracticeId) {
     return bodyPracticeId;
   }
 
