@@ -54,6 +54,7 @@ export interface AuthMeResponse {
   email?: string;
   googleUserId?: string;
   appUserId?: string;
+  practiceId?: string;
   // Backward-compatible alias while clients migrate.
   user_id?: string;
   notesApiAvailable?: boolean;
@@ -334,4 +335,18 @@ export interface GenerateNoteParams {
 
 export interface GenerateNoteResponse {
   content?: string;
+}
+
+export interface ScribeTemplate {
+  id: string;
+  name: string;
+  specialty?: string | null;
+  is_default: boolean;
+  firebase_template_id?: string | null;
+  output_format?: string | null;
+  is_streamable: boolean;
+}
+
+export interface GetScribeTemplatesResponse {
+  templates: ScribeTemplate[];
 }

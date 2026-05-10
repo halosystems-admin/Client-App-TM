@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { Patient, DriveFile, LabAlert, BreadcrumbItem, ChatMessage, TemplateItem } from '../../../shared/types';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import type { Patient, DriveFile, LabAlert, BreadcrumbItem, ChatMessage, TemplateItem, ScribeTemplate } from '../../../shared/types';
 import { AppStatus, FOLDER_MIME_TYPE } from '../../../shared/types';
 
 import {
@@ -7,6 +7,7 @@ import {
   fetchFolderContents,
   uploadFile,
   saveNote,
+  finalizeScribeOutput,
   updatePatient,
   updateFileMetadata,
   generatePatientSummary,
@@ -16,8 +17,10 @@ import {
   createFolder,
   askHaloStream,
   generateNote,
+  generateScribeDraft,
   getCachedTemplates,
   getTemplatesUiState,
+  getScribeTemplates,
 } from '../services/api';
 import {
   Upload, CheckCircle2, ChevronLeft, Loader2,
@@ -33,6 +36,7 @@ import { FileBrowser } from '../components/FileBrowser';
 import { NoteEditor } from '../components/NoteEditor';
 import { PatientChat } from '../components/PatientChat';
 import { getErrorMessage } from '../utils/formatting';
+import { parseStructuredNote } from '../utils/structuredNote';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 
 const LAST_TEMPLATE_KEY = 'halo_lastTemplateId';
@@ -52,6 +56,7 @@ interface Props {
   onToast: (message: string, type: 'success' | 'error' | 'info') => void;
   customTemplate?: string;
   userId?: string;
+  practiceId?: string;
   notesApiAvailable?: boolean;
   launchContext?: {
     tab?: 'overview' | 'notes' | 'chat' | 'sessions';
@@ -69,14 +74,21 @@ export const PatientWorkspace: React.FC<Props> = ({
   onToast,
   customTemplate,
   userId,
+  practiceId,
   notesApiAvailable,
   launchContext,
   showScoringInBottomNav = true,
 }) => {
+  const enableLegacyPopulateMemo = import.meta.env.VITE_ENABLE_LEGACY_POPULATE_MEMO === 'true';
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [summary, setSummary] = useState<string[]>([]);
   const [alerts, setAlerts] = useState<LabAlert[]>([]);
   const [noteContent, setNoteContent] = useState("");
+  const [scribeOutputId, setScribeOutputId] = useState<string | null>(null);
+  const [scribeOriginalMarkdown, setScribeOriginalMarkdown] = useState('');
+  const [scribeGenerating, setScribeGenerating] = useState(false);
+  const [scribeSaving, setScribeSaving] = useState(false);
+  const [scribeError, setScribeError] = useState<string | null>(null);
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
   const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'chat' | 'scoring'>('overview');
   const [chatSheetOpen, setChatSheetOpen] = useState(false);
@@ -138,10 +150,13 @@ export const PatientWorkspace: React.FC<Props> = ({
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [scribeTemplates, setScribeTemplates] = useState<ScribeTemplate[]>([]);
+  const [scribeTemplatesLoading, setScribeTemplatesLoading] = useState(false);
   const selectedTemplateIdRef = useRef<string | null>(null);
   const pendingRecordStartRef = useRef<(() => void) | null>(null);
   const pendingPopulateMemoSourceRef = useRef<string | null>(null);
   const [populateMemoHasBeenCalled, setPopulateMemoHasBeenCalled] = useState(false);
+  const scribeConsultationIdRef = useRef<string | null>(null);
 
   const normalizeTemplates = (raw: unknown): TemplateItem[] => {
     if (!raw) return [];
@@ -167,6 +182,45 @@ export const PatientWorkspace: React.FC<Props> = ({
   };
 
   const isFolder = (file: DriveFile): boolean => file.mimeType === FOLDER_MIME_TYPE;
+
+  const isSoapTemplate = (template: TemplateItem | null | undefined): boolean => {
+    if (!template) return false;
+    if (template.id === SOAP_BUILTIN_TEMPLATE.id) return true;
+    const type = String(template.type || '').toLowerCase();
+    const name = String(template.name || template.label || '').toLowerCase();
+    return type === 'soap' || name.includes('soap');
+  };
+
+  const resolveScribeTemplateId = (template: TemplateItem): string | null => {
+    // 1. If it is the default SOAP note, try to map it, otherwise force the test ID
+    if (template.id === SOAP_BUILTIN_TEMPLATE.id) {
+      const mappedSoapTemplate = scribeTemplates.find(
+        (item) => item.is_streamable && item.name.toLowerCase().includes('soap')
+      );
+      // Fallback directly to the test template ID if the secure backend hid it
+      return mappedSoapTemplate?.id || '77777777-7777-7777-7777-777777777777'; 
+    }
+
+    // 2. If a Firebase template was selected (not a valid UUID), force the test ID
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(template.id);
+    if (!isUuid) {
+      console.warn("Firebase template detected. Overriding with Supabase test ID for the Scribe rebuild.");
+      return '77777777-7777-7777-7777-777777777777';
+    }
+
+    // 3. Otherwise, return the valid Supabase template ID
+    return template.id;
+  };
+
+  const clearScribeDraft = () => {
+    setScribeOutputId(null);
+    setScribeOriginalMarkdown('');
+    setScribeGenerating(false);
+    setScribeSaving(false);
+    setScribeError(null);
+    setPopulateMemoHasBeenCalled(false);
+    scribeConsultationIdRef.current = null;
+  };
 
   // Load folder contents (with loading indicator)
   const loadFolderContents = useCallback(async (folderId: string) => {
@@ -239,6 +293,7 @@ export const PatientWorkspace: React.FC<Props> = ({
       setChatMessages([]);
       setChatInput("");
       setNoteContent("");
+      clearScribeDraft();
       setUploadMessage(null);
       setEditMode('write');
       setActiveTemplate(null);
@@ -331,6 +386,7 @@ export const PatientWorkspace: React.FC<Props> = ({
       setActiveTemplate(null);
       setSelectedTemplateId(null);
       setNoteContent('');
+      clearScribeDraft();
       setChatMessages([]);
       setChatInput('');
       setEditMode('write');
@@ -352,6 +408,22 @@ export const PatientWorkspace: React.FC<Props> = ({
       setActiveTab(launchContext.tab === 'sessions' ? 'overview' : launchContext.tab);
     }
   }, [launchContext, isLg]);
+
+  // Load scribe templates from Supabase (for SOAP resolution)
+  useEffect(() => {
+    setScribeTemplatesLoading(true);
+    getScribeTemplates(practiceId)
+      .then((templates) => {
+        setScribeTemplates(templates);
+      })
+      .catch((err) => {
+        console.error('[scribe-templates] load failed', err);
+        setScribeTemplates([]);
+      })
+      .finally(() => {
+        setScribeTemplatesLoading(false);
+      });
+  }, [practiceId]);
 
   // Navigate into a subfolder
   const navigateToFolder = async (folder: DriveFile) => {
@@ -475,13 +547,36 @@ export const PatientWorkspace: React.FC<Props> = ({
   };
 
   const handleSaveNote = async () => {
-    // Enforce template selection before saving
-    if (!activeTemplate) {
-      openTemplateModal('save');
-      return; // STRICTLY STOP EXECUTION HERE
+    if (!noteContent.trim()) return;
+
+    if (scribeOutputId) {
+      setStatus(AppStatus.SAVING);
+      setScribeSaving(true);
+      try {
+        await finalizeScribeOutput(
+          scribeOutputId,
+          noteContent,
+          noteContent.trim() !== scribeOriginalMarkdown.trim()
+        );
+        clearScribeDraft();
+        setNoteContent('');
+        setPopulateMemoHasBeenCalled(false);
+        onDataChange();
+        onToast('Scribe note finalized.', 'success');
+      } catch (err) {
+        onToast(getErrorMessage(err), 'error');
+      } finally {
+        setScribeSaving(false);
+        setStatus(AppStatus.IDLE);
+      }
+      return;
     }
 
-    if (!noteContent.trim()) return;
+    // Enforce template selection before filing to Drive
+    if (!activeTemplate) {
+      openTemplateModal('save');
+      return;
+    }
 
     setStatus(AppStatus.FILING);
     try {
@@ -532,6 +627,7 @@ export const PatientWorkspace: React.FC<Props> = ({
       });
 
       setNoteContent("");
+      clearScribeDraft();
       await loadFolderContents(currentFolderId);
       onDataChange();
       onToast('Note filed to Google Drive.', 'success');
@@ -541,54 +637,176 @@ export const PatientWorkspace: React.FC<Props> = ({
     setStatus(AppStatus.IDLE);
   };
 
-  const handleScribeResult = async (text: string) => {
-    setActiveTab('notes');
+  const resolvedScribeTemplateId = activeTemplate ? resolveScribeTemplateId(activeTemplate) : null;
+  const hasSelectedScribeTemplate = Boolean(
+    activeTemplate &&
+      (activeTemplate.id === SOAP_BUILTIN_TEMPLATE.id || resolvedScribeTemplateId)
+  );
 
-    const rawText = text;
+  /** Transcript for Scribe: plain editor text, or concatenated SOAP/structured fields when the editor is in structured mode. */
+  const scribeInputText = useMemo(() => {
+    const trimmed = noteContent.trim();
+    if (!trimmed) return '';
+    const structured = parseStructuredNote(
+      noteContent,
+      activeTemplate?.id
+    );
+    if (structured?.fields?.length) {
+      const fromFields = structured.fields
+        .map((f) => f.value.trim())
+        .filter(Boolean)
+        .join('\n\n')
+        .trim();
+      if (fromFields) return fromFields;
+    }
+    return trimmed;
+  }, [noteContent, activeTemplate?.id]);
+
+  const canGenerateScribeNote = Boolean(
+    patient?.id &&
+      scribeInputText &&
+      !scribeGenerating &&
+      !scribeSaving &&
+      hasSelectedScribeTemplate
+  );
+
+  const streamScribeDraftFromTranscript = async (
+    rawTranscript: string,
+    template: TemplateItem
+  ): Promise<void> => {
+    const transcript = rawTranscript.trim();
+    if (!transcript) {
+      onToast('Add encounter text in the Clinical Note Editor before generating.', 'info');
+      return;
+    }
+
+    const templateIdForStreaming = resolveScribeTemplateId(template);
+    if (!templateIdForStreaming) {
+      onToast('SOAP is selected, but no streamable SOAP template is configured for this practice.', 'error');
+      return;
+    }
+
+    if (scribeGenerating || scribeSaving) {
+      return;
+    }
+
+    setActiveTab('notes');
+    setEditMode('write');
+    setScribeError(null);
+    setScribeGenerating(true);
+    setPopulateMemoHasBeenCalled(false);
+    setScribeOutputId(null);
+    setScribeOriginalMarkdown('');
+    setNoteContent('');
+
+    let streamedMarkdown = '';
+    let resolvedOutputId = '';
+    const consultationId = scribeConsultationIdRef.current ?? crypto.randomUUID();
+    scribeConsultationIdRef.current = consultationId;
+
+    try {
+      console.log('[scribe-workspace] generate request prep', {
+        hasPracticeId: Boolean(practiceId),
+        practiceId,
+      });
+      const result = await generateScribeDraft(
+        {
+          ...(practiceId ? { practiceId } : {}),
+          patientId: patient.id,
+          consultationId,
+          templateId: templateIdForStreaming,
+          rawTranscript: transcript,
+        },
+        {
+          onChunk: (chunk) => {
+            streamedMarkdown += chunk;
+            setNoteContent((prev) => prev + chunk);
+          },
+          onOutputId: (outputId) => {
+            console.log('[scribe-workspace] onOutputId fired', {
+              hasOutputId: Boolean(outputId),
+              outputId,
+            });
+            resolvedOutputId = outputId;
+            setScribeOutputId(outputId);
+          },
+        }
+      );
+
+      const finalOutputId = resolvedOutputId || result.outputId || null;
+      console.log('[scribe-workspace] generation completed', {
+        resolvedOutputId,
+        resultOutputId: result.outputId,
+        finalOutputId,
+      });
+      if (finalOutputId) {
+        setScribeOutputId(finalOutputId);
+      }
+
+      if (streamedMarkdown.trim() && finalOutputId) {
+        setScribeOriginalMarkdown(streamedMarkdown);
+        setPopulateMemoHasBeenCalled(true);
+        setScribeError(null);
+        onToast('Scribe draft ready. Review and save when finished.', 'success');
+      } else if (streamedMarkdown.trim()) {
+        setPopulateMemoHasBeenCalled(false);
+        setScribeError('Scribe draft finished, but the draft id was not returned. Try generating again.');
+        onToast('Scribe draft finished, but the draft id was not returned. Try generating again.', 'error');
+      } else {
+        onToast('Scribe draft completed with no content.', 'info');
+      }
+    } catch (err) {
+      if (streamedMarkdown.trim()) {
+        setNoteContent(streamedMarkdown);
+      }
+      const message = getErrorMessage(err);
+      setScribeError(message);
+      onToast(message, 'error');
+    } finally {
+      setScribeGenerating(false);
+    }
+  };
+
+  const handleGenerateScribeDraft = async () => {
+    if (!activeTemplate) {
+      openTemplateModal('save');
+      return;
+    }
+
+    await streamScribeDraftFromTranscript(scribeInputText, activeTemplate);
+  };
+
+  const handleScribeResult = async (result: { rawTranscript: string; soapNote: string }) => {
+    setActiveTab('notes');
+    clearScribeDraft();
+
+    const transcript = (result.rawTranscript || '').trim();
+    const fallbackNote = (result.soapNote || '').trim();
+    const transcriptForScribe = transcript || fallbackNote;
+
+    if (!transcriptForScribe) {
+      onToast('No transcript was captured. Please record again.', 'error');
+      return;
+    }
 
     if (!activeTemplate) {
-      // No template selected (should not happen when using forced-template flow) — treat as clerk note
-      setNoteContent(prev => prev + (prev ? "\n\n" : "") + rawText);
+      setNoteContent(transcriptForScribe);
       setEditMode('write');
       return;
     }
 
-    const isSoapBuiltin =
-      activeTemplate.id === 'soap_builtin' ||
-      (activeTemplate.type && String(activeTemplate.type).toLowerCase() === 'soap');
-
     try {
-      let finalText = rawText;
-
-      if (!isSoapBuiltin) {
-        if (!userId) {
-          onToast('Sign in required to apply custom template.', 'error');
-        } else {
-          setGenerateNoteLoading(true);
-          const result = await generateNote({
-            template_id: activeTemplate.id,
-            text: rawText,
-            return_type: 'note',
-          });
-          if (result.mode === 'note') {
-            finalText =
-              typeof result.note === 'string'
-                ? result.note
-                : JSON.stringify(result.note, null, 2);
-          }
-        }
+      const templateIdForStreaming = resolveScribeTemplateId(activeTemplate);
+      if (!templateIdForStreaming && isSoapTemplate(activeTemplate)) {
+        onToast('SOAP template is selected, but no streamable SOAP template is configured for this practice. Please select a different template or configure a SOAP template.', 'error');
+        return;
       }
 
-      setNoteContent(finalText);
-      setPopulateMemoHasBeenCalled(true);
-      setEditMode('write');
-      onToast('Draft generated. Review and save when ready.', 'success');
+      await streamScribeDraftFromTranscript(transcriptForScribe, activeTemplate);
     } catch (err) {
       onToast(getErrorMessage(err), 'error');
-      setNoteContent(prev => prev + (prev ? "\n\n" : "") + rawText);
+      setNoteContent(transcriptForScribe);
       setEditMode('write');
-    } finally {
-      setGenerateNoteLoading(false);
     }
   };
 
@@ -633,7 +851,7 @@ export const PatientWorkspace: React.FC<Props> = ({
     const cachedTemplates = getCachedTemplates();
     if (cachedTemplates) {
       const deduped = cachedTemplates.filter((item) => item.id && item.id !== SOAP_BUILTIN_TEMPLATE.id);
-      const mergedTemplates = mode === 'typed' ? deduped : [SOAP_BUILTIN_TEMPLATE, ...deduped];
+      const mergedTemplates = [SOAP_BUILTIN_TEMPLATE, ...deduped];
       setTemplates(mergedTemplates);
       setTemplatesLoading(false);
       setTemplatesError(null);
@@ -648,7 +866,7 @@ export const PatientWorkspace: React.FC<Props> = ({
     try {
       const state = await getTemplatesUiState();
       const deduped = state.templates.filter((item) => item.id && item.id !== SOAP_BUILTIN_TEMPLATE.id);
-      const mergedTemplates = mode === 'typed' ? deduped : [SOAP_BUILTIN_TEMPLATE, ...deduped];
+      const mergedTemplates = [SOAP_BUILTIN_TEMPLATE, ...deduped];
       setTemplates(mergedTemplates);
       if (state.status === 'needs-halo-setup' || state.status === 'upstream-failure' || state.status === 'error') {
         setTemplatesError(state.message || 'Could not load templates.');
@@ -678,6 +896,7 @@ export const PatientWorkspace: React.FC<Props> = ({
       return;
     }
 
+    clearScribeDraft();
     setGenerateNoteLoading(true);
     try {
       const result = await generateNote({
@@ -719,6 +938,7 @@ export const PatientWorkspace: React.FC<Props> = ({
     }
 
     setActiveTemplate(tmpl);
+    scribeConsultationIdRef.current = crypto.randomUUID();
     selectedTemplateIdRef.current = chosenId;
     const mode = templateModalMode;
     setTemplateModalOpen(false);
@@ -741,6 +961,7 @@ export const PatientWorkspace: React.FC<Props> = ({
     setSelectedTemplateId(null);
     selectedTemplateIdRef.current = null;
     pendingPopulateMemoSourceRef.current = null;
+    clearScribeDraft();
     setPopulateMemoHasBeenCalled(false);
     setEditMode('write');
   };
@@ -1021,25 +1242,71 @@ export const PatientWorkspace: React.FC<Props> = ({
                 />
               </div>
             ) : activeTab === 'notes' ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <NoteEditor
-                  noteContent={noteContent}
-                  onNoteContentChange={setNoteContent}
-                  editMode={editMode}
-                  onEditModeChange={setEditMode}
-                  status={status}
-                  onSave={handleSaveNote}
-                  onDiscard={handleDiscardNote}
-                  activeTemplateLabel={activeTemplate ? (activeTemplate.name || activeTemplate.label || activeTemplate.id) : undefined}
-                  activeTemplateId={activeTemplate?.id}
-                  onChangeTemplate={() => {
-                    pendingPopulateMemoSourceRef.current = null;
-                    void openTemplateModal('save');
-                  }}
-                  onPopulateMemo={handlePopulateMemo}
-                  populateMemoLoading={generateNoteLoading}
-                  canSaveNote={populateMemoHasBeenCalled}
-                />
+              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+                <div className="shrink-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Scribe transcript</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Paste or dictate the encounter text in the editor below, then stream a live draft in place.
+                      </p>
+                    </div>
+                    {scribeOutputId && (
+                      <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
+                        Draft linked
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleGenerateScribeDraft}
+                      disabled={!canGenerateScribeNote}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-medium text-teal-700 transition-all hover:bg-teal-50 disabled:opacity-50"
+                    >
+                      {scribeGenerating ? 'Generating...' : 'Generate Scribe Note'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearScribeDraft();
+                        setNoteContent('');
+                        setEditMode('write');
+                      }}
+                      disabled={scribeGenerating || scribeSaving || !noteContent.trim()}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Clear field
+                    </button>
+                    {scribeOutputId && (
+                      <span className="text-xs font-medium text-slate-500">
+                        Save will finalize the linked draft.
+                      </span>
+                    )}
+                  </div>
+                  {scribeError && <p className="mt-2 text-sm text-rose-600">{scribeError}</p>}
+                </div>
+
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <NoteEditor
+                    noteContent={noteContent}
+                    onNoteContentChange={setNoteContent}
+                    editMode={editMode}
+                    onEditModeChange={setEditMode}
+                    status={status}
+                    onSave={handleSaveNote}
+                    onDiscard={handleDiscardNote}
+                    activeTemplateLabel={activeTemplate ? (activeTemplate.name || activeTemplate.label || activeTemplate.id) : undefined}
+                    activeTemplateId={activeTemplate?.id}
+                    onChangeTemplate={() => {
+                      pendingPopulateMemoSourceRef.current = null;
+                      void openTemplateModal('save');
+                    }}
+                    onPopulateMemo={enableLegacyPopulateMemo ? handlePopulateMemo : undefined}
+                    populateMemoLoading={generateNoteLoading}
+                    canSaveNote={populateMemoHasBeenCalled && !scribeGenerating && !scribeSaving}
+                  />
+                </div>
               </div>
             ) : activeTab === 'chat' && isLg ? (
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1484,7 +1751,7 @@ export const PatientWorkspace: React.FC<Props> = ({
                 {templateModalMode === 'record'
                   ? 'Continue Recording'
                   : templateModalMode === 'typed'
-                    ? 'Populate Memo'
+                    ? (enableLegacyPopulateMemo ? 'Populate Memo' : 'Continue')
                   : 'Continue'}
               </button>
             </div>
