@@ -1,6 +1,14 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { config } from '../config';
+import { getScribePool } from '../services/scribe/db';
+import {
+  APPROVED_PRODUCTION_FAKE_E2E_PRACTICE_ID,
+  PRODUCTION_FAKE_E2E_SESSION_HEADER,
+  PRODUCTION_FAKE_E2E_TOKEN_HEADER,
+  evaluateProductionFakeE2eSessionAllow,
+  rehearsalSessionIdentity,
+} from '../lib/productionFakeE2eSession';
 
 const router = Router();
 
@@ -159,15 +167,75 @@ router.get('/me', (req: Request, res: Response) => {
   if (req.session.accessToken) {
     const googleUserId = req.session.userId || '';
     const appUserId = req.session.userId || req.session.userEmail || '';
-    res.json({
-      signedIn: true,
-      email: req.session.userEmail,
-      googleUserId,
-      appUserId,
-      // Backward-compatible alias consumed by existing clients.
-      user_id: appUserId,
-      notesApiAvailable: !!config.notesApiUrl,
-    });
+    void (async () => {
+      let practiceId: string | undefined;
+      try {
+        const pool = getScribePool();
+
+        const defaultResult = await pool.query<{ practice_id: string }>(
+          `
+            SELECT practice_id::text AS practice_id
+            FROM scribe_templates
+            WHERE is_default = true
+            ORDER BY updated_at DESC
+            LIMIT 1
+          `
+        );
+
+        const defaultPracticeId = defaultResult.rows[0]?.practice_id?.trim();
+        if (defaultPracticeId) {
+          practiceId = defaultPracticeId;
+        } else {
+          const distinctResult = await pool.query<{ practice_id: string }>(
+            `
+              SELECT DISTINCT practice_id::text AS practice_id
+              FROM scribe_templates
+              WHERE practice_id IS NOT NULL
+              LIMIT 2
+            `
+          );
+
+          if (distinctResult.rows.length === 1) {
+            const onlyPracticeId = distinctResult.rows[0]?.practice_id?.trim();
+            if (onlyPracticeId) {
+              practiceId = onlyPracticeId;
+            }
+          }
+        }
+      } catch {
+        // Best-effort only; auth/me remains available even if scribe DB is not ready.
+      }
+
+      if (!practiceId) {
+        const configuredPracticeId = config.scribePracticeId.trim();
+        if (configuredPracticeId) {
+          practiceId = configuredPracticeId;
+        }
+      }
+
+      if (practiceId) {
+        req.session.practiceId = practiceId;
+        req.session.practice_id = practiceId;
+      } else {
+        req.session.practiceId = undefined;
+        req.session.practice_id = undefined;
+      }
+
+      res.json({
+        signedIn: true,
+        email: req.session.userEmail,
+        googleUserId,
+        appUserId,
+        practiceId,
+        // Backward-compatible alias consumed by existing clients.
+        user_id: appUserId,
+        notesApiAvailable: !!config.notesApiUrl,
+      });
+      console.log('[auth/me] response built', {
+        hasPracticeId: Boolean(practiceId),
+        practiceId,
+      });
+    })();
   } else {
     res.json({ signedIn: false });
   }
@@ -176,6 +244,110 @@ router.get('/me', (req: Request, res: Response) => {
 router.post('/logout', (req: Request, res: Response) => {
   req.session.destroy(() => {
     res.json({ success: true });
+  });
+});
+
+const LOCAL_E2E_DEFAULT_PRACTICE_ID = '44444444-4444-4444-4444-444444444444';
+
+function isPostgresUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+/**
+ * BC-6E production fake-patient E2E only — disabled unless Ops enables server gates.
+ * Not a login bypass; fixed pilot practice; requires session token header match.
+ */
+router.post('/production-fake-e2e/verify-session', (req: Request, res: Response) => {
+  const isProductionRuntime = process.env.NODE_ENV === 'production' || config.isProduction;
+  if (!isProductionRuntime) {
+    res.status(404).json({ error: 'Not found.' });
+    return;
+  }
+
+  const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+  const practiceId =
+    typeof body.practiceId === 'string' && body.practiceId.trim() ? body.practiceId.trim() : '';
+
+  const gateErrors = evaluateProductionFakeE2eSessionAllow(
+    process.env,
+    {
+      practiceId,
+      sessionHeader: String(req.get(PRODUCTION_FAKE_E2E_SESSION_HEADER) || '').trim(),
+      tokenHeader: String(req.get(PRODUCTION_FAKE_E2E_TOKEN_HEADER) || '').trim(),
+    },
+    { isProductionRuntime: true }
+  );
+
+  if (gateErrors.length > 0) {
+    console.warn('[auth/production-fake-e2e/verify-session] refused', {
+      reasonCount: gateErrors.length,
+    });
+    res.status(403).json({ error: 'Forbidden.' });
+    return;
+  }
+
+  const identity = rehearsalSessionIdentity(APPROVED_PRODUCTION_FAKE_E2E_PRACTICE_ID);
+  req.session.accessToken = 'production-fake-e2e-access-token';
+  req.session.userEmail = identity.email;
+  req.session.userId = identity.userId;
+  req.session.practiceId = identity.practiceId;
+  req.session.practice_id = identity.practiceId;
+  req.session.tokenExpiry = Date.now() + 60 * 60 * 1000;
+
+  req.session.save((err) => {
+    if (err) {
+      console.error('[auth/production-fake-e2e/verify-session] session save failed', err);
+      res.status(500).json({ error: 'Failed to save verification session.' });
+      return;
+    }
+    res.status(200).json({ ok: true, practiceId: identity.practiceId });
+  });
+});
+
+/** Local/staging E2E only: establish session (HALO_VERIFY_SCRIBE_E2E=1). Returns 404 in production. */
+router.post('/dev/verify-session', (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production' || config.isProduction) {
+    res.status(404).json({ error: 'Not found.' });
+    return;
+  }
+
+  if (process.env.HALO_VERIFY_SCRIBE_E2E !== '1') {
+    res.status(403).json({ error: 'Forbidden.' });
+    return;
+  }
+
+  const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+  const rawPracticeId =
+    typeof body.practiceId === 'string' && body.practiceId.trim()
+      ? body.practiceId.trim()
+      : LOCAL_E2E_DEFAULT_PRACTICE_ID;
+
+  if (!isPostgresUuid(rawPracticeId)) {
+    res.status(400).json({ error: 'practiceId must be a valid Postgres UUID.' });
+    return;
+  }
+
+  const email =
+    typeof body.email === 'string' && body.email.trim()
+      ? body.email.trim()
+      : 'local-scribe-e2e@halo.local';
+  const userId =
+    typeof body.userId === 'string' && body.userId.trim() ? body.userId.trim() : 'local-scribe-e2e';
+
+  req.session.accessToken = 'local-e2e-access-token';
+  req.session.userEmail = email;
+  req.session.userId = userId;
+  req.session.practiceId = rawPracticeId;
+  req.session.practice_id = rawPracticeId;
+  req.session.tokenExpiry = Date.now() + 60 * 60 * 1000;
+
+  req.session.save((err) => {
+    if (err) {
+      console.error('[auth/dev/verify-session] session save failed', err);
+      res.status(500).json({ error: 'Failed to save verification session.' });
+      return;
+    }
+    res.status(200).json({ ok: true, practiceId: rawPracticeId });
   });
 });
 

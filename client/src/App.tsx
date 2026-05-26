@@ -173,6 +173,8 @@ type PatientLaunchContext = {
   freshSession?: boolean;
 };
 
+const apiBase = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
+
 export const App = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patientsDrawerOpen, setPatientsDrawerOpen] = useState(false);
@@ -214,6 +216,7 @@ export const App = () => {
   const [appUserId, setAppUserId] = useState<string | undefined>();
   const [googleUserId, setGoogleUserId] = useState<string | undefined>();
   const [notesApiAvailable, setNotesApiAvailable] = useState(false);
+  const [practiceId, setPracticeId] = useState<string | undefined>();
   const [loginTime] = useState<number>(Date.now());
   const [patientLaunchContext, setPatientLaunchContext] = useState<PatientLaunchContext | null>(null);
 
@@ -317,6 +320,7 @@ export const App = () => {
           setAppUserId(auth.appUserId || auth.user_id);
           setGoogleUserId(auth.googleUserId || auth.user_id);
           setNotesApiAvailable(!!auth.notesApiAvailable);
+          setPracticeId(auth.practiceId);
           const loadedPatients = await refreshPatients();
           // Validate stored patient selection — clear if patient no longer exists
           const storedId = sessionStorage.getItem('halo_selectedPatientId');
@@ -344,10 +348,12 @@ export const App = () => {
             }
           }).catch(() => {});
         } else {
+          setPracticeId(undefined);
           setSettingsLoaded(true);
         }
       } catch {
         console.error('Session check failed');
+        setPracticeId(undefined);
         setSettingsLoaded(true);
       }
       setIsReady(true);
@@ -358,12 +364,13 @@ export const App = () => {
   const handleSignIn = () => {
     if (loading) return;
     setLoading(true);
-    window.location.href = `${import.meta.env.VITE_API_URL}/auth/google`;
+    window.location.href = apiBase ? `${apiBase}/auth/google` : '/auth/google';
   };
 
   const handleLogout = async () => {
     await logout();
     setIsSignedIn(false);
+    setPracticeId(undefined);
     clearHasOpenedPatient();
     setHasOpenedPatient(false);
     setPatientLaunchContext(null);
@@ -686,6 +693,7 @@ export const App = () => {
             onToast={showToast}
             customTemplate={userSettings?.noteTemplate === 'custom' ? userSettings.customTemplateContent : undefined}
             userId={appUserId}
+            practiceId={practiceId}
             notesApiAvailable={notesApiAvailable}
             launchContext={patientLaunchContext}
             showScoringInBottomNav={userSettings?.showScoringInBottomNav !== false}

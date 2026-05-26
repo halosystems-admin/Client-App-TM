@@ -9,6 +9,8 @@ declare module 'express-session' {
     tokenExpiry?: number;
     userEmail?: string;
     userId?: string;
+    practiceId?: string;
+    practice_id?: string;
   }
 }
 

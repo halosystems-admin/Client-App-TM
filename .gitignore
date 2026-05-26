@@ -1,6 +1,12 @@
 node_modules/
 dist/
 .env
+.env.staging
 client/node_modules/
 client/dist/
 sessions/
+tmp/
+gate-evidence/
+*.local.json
+firebase-template-raw*.json
+firebase-template-dry-run-report*.json

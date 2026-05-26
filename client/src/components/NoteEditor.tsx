@@ -1,7 +1,7 @@
 import React from 'react';
 import { Save, Wand2 } from 'lucide-react';
 import { AppStatus } from '../../../shared/types';
-import { renderInlineMarkdown } from '../utils/formatting';
+import { looksLikeMarkdown, renderMarkdown } from '../utils/markdown';
 import {
   parseStructuredNote,
   serializeStructuredNote,
@@ -21,36 +21,14 @@ interface NoteEditorProps {
   onChangeTemplate?: () => void;
   onPopulateMemo?: () => void;
   populateMemoLoading?: boolean;
+  isGenerating?: boolean;
   canSaveNote?: boolean;
-}
-
-function renderMarkdown(text: string) {
-  if (!text) return <p className="text-slate-400 italic">Empty note...</p>;
-  return text.split('\n').map((line, idx) => {
-    if (line.startsWith('## ')) {
-      return <h2 key={idx} className="text-lg font-bold text-slate-800 mt-4 mb-2">{renderInlineMarkdown(line.slice(3))}</h2>;
-    }
-    if (line.startsWith('### ')) {
-      return <h3 key={idx} className="text-base font-bold text-slate-700 mt-3 mb-1">{renderInlineMarkdown(line.slice(4))}</h3>;
-    }
-    if (line.startsWith('# ')) {
-      return <h1 key={idx} className="text-xl font-bold text-slate-900 mt-4 mb-2">{renderInlineMarkdown(line.slice(2))}</h1>;
-    }
-    if (/^\s*[\*\-]\s/.test(line)) {
-      const content = line.replace(/^\s*[\*\-]\s/, '');
-      return <li key={idx} className="ml-5 mb-1 text-slate-700 list-disc">{renderInlineMarkdown(content)}</li>;
-    }
-    if (line.trim() === '') {
-      return <div key={idx} className="h-2" />;
-    }
-    return <p key={idx} className="mb-1 text-slate-700">{renderInlineMarkdown(line)}</p>;
-  });
 }
 
 export const NoteEditor: React.FC<NoteEditorProps> = ({
   noteContent, onNoteContentChange, editMode, onEditModeChange, status, onSave,
   onDiscard, activeTemplateLabel, activeTemplateId, onChangeTemplate, onPopulateMemo,
-  populateMemoLoading = false, canSaveNote = false,
+  populateMemoLoading = false, isGenerating = false, canSaveNote = false,
 }) => {
   const hasDraft = noteContent.trim().length > 0;
   const structuredNote = parseStructuredNote(noteContent, activeTemplateId);
@@ -85,7 +63,11 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 <label className="text-sm font-semibold text-slate-700">{field.label}</label>
                 <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{field.key}</span>
               </div>
-              {field.multiline ? (
+              {readOnly && looksLikeMarkdown(field.value) ? (
+                <div className="prose prose-sm prose-slate max-w-none rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2">
+                  {renderMarkdown(field.value)}
+                </div>
+              ) : field.multiline ? (
                 <textarea
                   value={field.value}
                   readOnly={readOnly}
@@ -121,6 +103,11 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {isGenerating && (
+            <span className="rounded-full border border-teal-100 bg-teal-50 px-3 py-1 text-[11px] font-semibold text-teal-700">
+              Streaming draft...
+            </span>
+          )}
           {onChangeTemplate && (
             <button
               onClick={onChangeTemplate}

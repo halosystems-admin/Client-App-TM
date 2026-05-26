@@ -54,6 +54,7 @@ export interface AuthMeResponse {
   email?: string;
   googleUserId?: string;
   appUserId?: string;
+  practiceId?: string;
   // Backward-compatible alias while clients migrate.
   user_id?: string;
   notesApiAvailable?: boolean;
@@ -334,4 +335,53 @@ export interface GenerateNoteParams {
 
 export interface GenerateNoteResponse {
   content?: string;
+}
+
+export type ScribeTemplateRequirementType = 'date' | 'boolean' | 'enum' | 'string';
+
+export interface ScribeTemplateRequirement {
+  key: string;
+  displayLabel: string;
+  type: ScribeTemplateRequirementType | string;
+  required: boolean;
+  doctorHint: string | null;
+  examplePhrase: string | null;
+  fieldOrder: number;
+  /** Canonical enum values from `validation_rule_json.options` / `enumOptions`. */
+  options?: string[];
+  /** Maps canonical option -> alternate phrases (from `validation_rule_json.synonyms`). */
+  synonyms?: Record<string, string[]>;
+}
+
+export interface ScribeTemplate {
+  id: string;
+  name: string;
+  specialty?: string | null;
+  is_default: boolean;
+  firebase_template_id?: string | null;
+  output_format?: string | null;
+  is_streamable: boolean;
+  /** Dictation hints from scribe_template_requirements (never includes system_prompt_md). */
+  requirements?: ScribeTemplateRequirement[];
+}
+
+export interface GetScribeTemplatesResponse {
+  templates: ScribeTemplate[];
+}
+
+/** Finalized Scribe note surfaced in Patient Workspace (from scribe_outputs.final_markdown). */
+export interface ScribeFinalizedNote {
+  outputId: string;
+  consultationId: string;
+  templateId: string | null;
+  templateName: string | null;
+  firebaseTemplateId: string | null;
+  doctorEdited: boolean;
+  finalizedAt: string;
+  preview: string;
+  finalMarkdown: string;
+}
+
+export interface GetScribeFinalizedNotesResponse {
+  notes: ScribeFinalizedNote[];
 }

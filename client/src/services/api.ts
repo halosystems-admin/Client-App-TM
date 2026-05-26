@@ -15,6 +15,8 @@ import type {
   AdmissionsBoard,
   CalendarEvent,
   AuthMeResponse,
+  ScribeTemplate,
+  ScribeFinalizedNote,
 } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -25,11 +27,14 @@ let templatesCachePromise: Promise<TemplateListResponse> | null = null;
 // --- Structured Error ---
 export class ApiError extends Error {
   status: number;
+  /** Optional structured payload (e.g. 422 missing_required_inputs from Scribe generate). */
+  details?: Record<string, unknown>;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, details?: Record<string, unknown>) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -77,6 +82,133 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
   }
 
   return data as T;
+}
+
+async function readSseResponse(
+  res: Response,
+  handlers: {
+    onText: (text: string) => void;
+    onMeta?: (payload: Record<string, unknown>) => void;
+  }
+): Promise<void> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new ApiError('No response body', 500);
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let eventData: string[] = [];
+
+  const flushEvent = () => {
+    if (eventData.length === 0) return false;
+    const data = eventData.join('\n');
+    eventData = [];
+
+    if (data === '[DONE]') {
+      return true;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data) as unknown;
+    } catch {
+      handlers.onText(data);
+      return false;
+    }
+
+    if (parsed && typeof parsed === 'object') {
+      const payload = parsed as Record<string, unknown>;
+
+      // Preserve existing status==="error" handling
+      if (payload['status'] === 'error') {
+        throw new ApiError(
+          typeof payload['error'] === 'string' && payload['error'].trim()
+            ? String(payload['error'])
+            : 'Request failed.',
+          res.status
+        );
+      }
+
+      // New explicit handling for backend SSE shape
+      if (payload['type'] === 'chunk') {
+        handlers.onText(String(payload['text'] ?? ''));
+        return false;
+      }
+
+      if (payload['type'] === 'meta' || typeof payload['outputId'] === 'string') {
+        console.log('[scribe-parser] control payload', {
+          keys: Object.keys(payload),
+          type: payload['type'],
+          hasOutputId: typeof payload['outputId'] === 'string' && payload['outputId'].trim().length > 0,
+        });
+        handlers.onMeta?.(payload);
+        return false;
+      }
+
+      if (payload['type'] === 'done') {
+        return true;
+      }
+
+      if (payload['type'] === 'error') {
+        throw new ApiError(
+          typeof payload['error'] === 'string' && payload['error'].trim()
+            ? String(payload['error'])
+            : 'Generation failed.',
+          res.status
+        );
+      }
+    }
+
+    if (typeof parsed === 'string') {
+      handlers.onText(parsed);
+    } else {
+      // Fallback: pass raw event data (covers plain JSON-string payloads)
+      handlers.onText(data);
+    }
+
+    return false;
+  };
+
+  const processLine = (rawLine: string) => {
+    const line = rawLine.replace(/\r$/, '');
+    if (!line) {
+      return flushEvent();
+    }
+
+    if (line.startsWith('data:')) {
+      eventData.push(line.slice(5).replace(/^ /, ''));
+    }
+
+    return false;
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    for (const rawLine of lines) {
+      if (processLine(rawLine)) {
+        return;
+      }
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.length > 0) {
+    const trailingLines = buffer.split('\n');
+    for (const rawLine of trailingLines) {
+      if (processLine(rawLine)) {
+        return;
+      }
+    }
+  }
+
+  if (eventData.length > 0) {
+    flushEvent();
+  }
 }
 
 // --- AUTH ---
@@ -254,12 +386,162 @@ export const analyzeAndRenameImage = async (base64Image: string): Promise<string
   return data.filename;
 };
 
-export const transcribeToSOAP = async (audioBase64: string, mimeType: string, customTemplate?: string): Promise<string> => {
-  const data = await request<{ soapNote: string }>('/api/ai/transcribe', {
+export interface TranscribeToSoapResult {
+  soapNote: string;
+  rawTranscript: string;
+}
+
+export const transcribeToSOAP = async (
+  audioBase64: string,
+  mimeType: string,
+  customTemplate?: string
+): Promise<TranscribeToSoapResult> => {
+  const data = await request<{ soapNote?: string; rawTranscript?: string }>('/api/ai/transcribe', {
     method: 'POST',
     body: JSON.stringify({ audioBase64, mimeType, customTemplate }),
   });
-  return data.soapNote;
+
+  return {
+    soapNote: typeof data.soapNote === 'string' ? data.soapNote : '',
+    rawTranscript: typeof data.rawTranscript === 'string' ? data.rawTranscript : '',
+  };
+};
+
+// --- SCRIBE ---
+export interface GenerateScribeDraftParams {
+  patientId: string;
+  consultationId: string;
+  templateId: string;
+  rawTranscript: string;
+  practiceId?: string;
+}
+
+export interface GenerateScribeDraftResult {
+  outputId: string | null;
+}
+
+export const generateScribeDraft = async (
+  params: GenerateScribeDraftParams,
+  handlers: {
+    onChunk: (text: string) => void;
+    onOutputId?: (outputId: string) => void;
+    /** Called only after the server accepts the request and begins SSE (never on 4xx). */
+    onStreamStart?: () => void;
+  }
+): Promise<GenerateScribeDraftResult> => {
+  console.log('[scribe-api] generate request body', {
+    hasPracticeId: Boolean(params.practiceId),
+    practiceId: params.practiceId,
+    hasPatientId: Boolean(params.patientId),
+    hasConsultationId: Boolean(params.consultationId),
+    hasTemplateId: Boolean(params.templateId),
+  });
+
+  const res = await fetch(`${API_BASE}/api/scribe/generate`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      patientId: params.patientId,
+      consultationId: params.consultationId,
+      templateId: params.templateId,
+      rawTranscript: params.rawTranscript,
+      ...(params.practiceId ? { practiceId: params.practiceId } : {}),
+    }),
+  });
+
+  if (res.status === 401) {
+    window.location.href = '/';
+    throw new ApiError('Not authenticated', 401);
+  }
+
+  if (res.status === 422) {
+    const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (payload['status'] === 'missing_required_inputs') {
+      throw new ApiError(
+        'Missing required dictation inputs for this template.',
+        422,
+        payload
+      );
+    }
+    const message =
+      typeof payload['error'] === 'string' && payload['error'].trim()
+        ? String(payload['error'])
+        : 'Request failed (422)';
+    throw new ApiError(message, 422, payload);
+  }
+
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({} as Record<string, unknown>));
+    const message = typeof payload['error'] === 'string' && payload['error'].trim()
+      ? String(payload['error'])
+      : `Request failed (${res.status})`;
+    throw new ApiError(message, res.status);
+  }
+
+  const outputState = { outputId: null as string | null };
+
+  handlers.onStreamStart?.();
+
+  await readSseResponse(res, {
+    onText: (text) => {
+      handlers.onChunk(text);
+    },
+    onMeta: (payload) => {
+      const hasOutputId = typeof payload['outputId'] === 'string' && payload['outputId'].trim().length > 0;
+      console.log('[scribe-parser] meta detection', {
+        type: payload['type'],
+        hasOutputId,
+      });
+      if (payload['type'] === 'meta' && typeof payload['outputId'] === 'string' && payload['outputId'].trim()) {
+        outputState.outputId = payload['outputId'].trim();
+        handlers.onOutputId?.(outputState.outputId);
+      }
+    },
+  });
+
+  return outputState;
+};
+
+export interface FinalizeScribeOutputResult {
+  ok: boolean;
+  outputId: string;
+  consultationId: string;
+  patientId: string;
+  practiceId: string;
+}
+
+export const finalizeScribeOutput = async (
+  outputId: string,
+  finalMarkdown: string,
+  doctorEdited: boolean
+): Promise<FinalizeScribeOutputResult> => {
+  return request<FinalizeScribeOutputResult>(
+    `/api/scribe/${encodeURIComponent(outputId)}/finalize`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ finalMarkdown, doctorEdited }),
+    }
+  );
+};
+
+export const getScribeTemplates = async (practiceId?: string): Promise<ScribeTemplate[]> => {
+  const queryParam = practiceId ? `?practiceId=${encodeURIComponent(practiceId)}` : '';
+  const data = await request<{ templates: ScribeTemplate[] }>(`/api/scribe/templates${queryParam}`);
+  return data.templates || [];
+};
+
+export const getScribeFinalizedNotes = async (
+  patientId: string,
+  practiceId?: string
+): Promise<ScribeFinalizedNote[]> => {
+  const query = new URLSearchParams();
+  if (practiceId) query.set('practiceId', practiceId);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  const data = await request<{ notes: ScribeFinalizedNote[] }>(
+    `/api/scribe/patients/${encodeURIComponent(patientId)}/finalized-notes${suffix}`
+  );
+  return data.notes || [];
 };
 
 // --- HALO EXTRACTION ---

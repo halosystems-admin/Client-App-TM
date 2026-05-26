@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Wand2, MessageCircle } from 'lucide-react';
-import { transcribeToSOAP } from '../../services/api';
+import { transcribeToSOAP, type TranscribeToSoapResult } from '../../services/api';
 
 export type UniversalScribeVariant = 'floating' | 'recordDock';
 
 interface Props {
-  onTranscriptionComplete: (text: string) => void;
+  onTranscriptionComplete: (result: TranscribeToSoapResult) => void;
   onError?: (message: string) => void;
   customTemplate?: string;
   onRequestStartRecording?: (start: () => void) => void;
@@ -88,8 +88,8 @@ export const UniversalScribe: React.FC<Props> = ({
             try {
               const base64Data = (reader.result as string).split(',')[1];
               if (base64Data) {
-                const soapNote = await transcribeToSOAP(base64Data, recordingMimeType.current, customTemplate);
-                onTranscriptionComplete(soapNote);
+                const result = await transcribeToSOAP(base64Data, recordingMimeType.current, customTemplate);
+                onTranscriptionComplete(result);
               }
             } catch (err) {
               onError?.(`Transcription failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
