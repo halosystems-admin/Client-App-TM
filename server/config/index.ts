@@ -56,6 +56,8 @@ export const config = {
   haloUserId: process.env.HALO_USER_ID || 'cae6877e-0fbe-4ea1-acce-39957e7575bc',
   haloMobileUserId: process.env.HALO_MOBILE_USER_ID || 'fcb5cfec-e10e-4c3a-bd44-064a788a6243',
   haloMobileTemplateId: process.env.HALO_MOBILE_TEMPLATE_ID || 'report',
+  scribeServiceUrl:
+    process.env.SCRIBE_SERVICE_URL || 'https://halo-api-scribe-production-2002614584c0.herokuapp.com',
   scribePracticeId: process.env.SCRIBE_PRACTICE_ID || '',
 
   // Template request email (optional)

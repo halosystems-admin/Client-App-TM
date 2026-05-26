@@ -15,7 +15,7 @@ import notesProxyRoutes from './routes/notesProxy';
 import calendarRoutes from './routes/calendar';
 import haloRoutes from './routes/halo';
 import requestTemplateRoutes from './routes/requestTemplate';
-import scribeRoutes from './routes/scribe';
+import scribeRoutes from './routes/scribeProxy';
 import { requireAuth } from './middleware/requireAuth';
 import { startScheduler } from './jobs/scheduler';
 import { attachTranscribeWebSocket } from './ws/transcribe';
