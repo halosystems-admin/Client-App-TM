@@ -137,11 +137,15 @@ app.use('/api/calendar', requireAuth, calendarRoutes);
 app.use('/api/halo', haloRoutes);
 app.use('/api/request-template', requestTemplateRoutes);
 const scribeServiceUrl = (config.scribeServiceUrl || '').trim();
-const scribeRoutes = scribeServiceUrl ? scribeProxyRoutes : scribeDirectRoutes;
-if (scribeServiceUrl) {
+const scribeRoutes = scribeRouteMode === 'proxy' ? scribeProxyRoutes : scribeDirectRoutes;
+if (scribeRouteMode === 'proxy') {
   console.log('[scribe] Using upstream Scribe service proxy', {
     upstream: scribeServiceUrl.replace(/:[^:@/]+@/, ':***@'),
   });
+} else if (scribeServiceUrl) {
+  console.log(
+    '[scribe] Using in-process Scribe routes (bridge: SCRIBE_DATABASE_URL; upstream URL not used for session-bound API)'
+  );
 } else {
   console.log('[scribe] Using in-process Scribe routes (halo-core via SCRIBE_DATABASE_URL)');
 }

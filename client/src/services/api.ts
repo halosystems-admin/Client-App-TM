@@ -38,16 +38,25 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+type ApiRequestOptions = RequestInit & {
+  /** When true, 401 does not hard-redirect to `/` (used for Scribe panel calls). */
+  skipAuthRedirect?: boolean;
+};
+
+async function request<T = unknown>(
+  path: string,
+  options: ApiRequestOptions = {}
+): Promise<T> {
+  const { skipAuthRedirect, ...fetchOptions } = options;
   let res: Response;
   try {
     const url = /^https?:\/\//i.test(path) ? path : `${API_BASE}${path}`;
     res = await fetch(url, {
-      ...options,
+      ...fetchOptions,
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(options.headers || {}),
+        ...(fetchOptions.headers || {}),
       },
     });
   } catch (err) {
@@ -62,7 +71,9 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
   }
 
   if (res.status === 401) {
-    window.location.href = '/';
+    if (!skipAuthRedirect) {
+      window.location.href = '/';
+    }
     throw new ApiError('Not authenticated', 401);
   }
 
@@ -451,7 +462,6 @@ export const generateScribeDraft = async (
   });
 
   if (res.status === 401) {
-    window.location.href = '/';
     throw new ApiError('Not authenticated', 401);
   }
 
@@ -521,13 +531,16 @@ export const finalizeScribeOutput = async (
     {
       method: 'POST',
       body: JSON.stringify({ finalMarkdown, doctorEdited }),
+      skipAuthRedirect: true,
     }
   );
 };
 
 export const getScribeTemplates = async (practiceId?: string): Promise<ScribeTemplate[]> => {
   const queryParam = practiceId ? `?practiceId=${encodeURIComponent(practiceId)}` : '';
-  const data = await request<{ templates: ScribeTemplate[] }>(`/api/scribe/templates${queryParam}`);
+  const data = await request<{ templates: ScribeTemplate[] }>(`/api/scribe/templates${queryParam}`, {
+    skipAuthRedirect: true,
+  });
   return data.templates || [];
 };
 
@@ -539,7 +552,8 @@ export const getScribeFinalizedNotes = async (
   if (practiceId) query.set('practiceId', practiceId);
   const suffix = query.toString() ? `?${query.toString()}` : '';
   const data = await request<{ notes: ScribeFinalizedNote[] }>(
-    `/api/scribe/patients/${encodeURIComponent(patientId)}/finalized-notes${suffix}`
+    `/api/scribe/patients/${encodeURIComponent(patientId)}/finalized-notes${suffix}`,
+    { skipAuthRedirect: true }
   );
   return data.notes || [];
 };

@@ -8,8 +8,23 @@ import {
 
 export type ScribeRouteMode = 'proxy' | 'in-process';
 
+/**
+ * halo-main may set SCRIBE_SERVICE_URL for ops while also using SCRIBE_DATABASE_URL (bridge).
+ * Session-bound Scribe routes must run in-process on halo-main so the user's cookie is honored.
+ * Proxy is only used when no local halo-core connection is configured.
+ */
 export function resolveScribeRouteMode(): ScribeRouteMode {
-  return (config.scribeServiceUrl || '').trim() ? 'proxy' : 'in-process';
+  const upstream = (config.scribeServiceUrl || '').trim();
+  if (!upstream) {
+    return 'in-process';
+  }
+
+  try {
+    assertScribeDatabaseConfigured();
+    return 'in-process';
+  } catch {
+    return 'proxy';
+  }
 }
 
 /**

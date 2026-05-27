@@ -171,6 +171,7 @@ export const PatientWorkspace: React.FC<Props> = ({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [scribeTemplates, setScribeTemplates] = useState<ScribeTemplate[]>([]);
   const [scribeTemplatesLoading, setScribeTemplatesLoading] = useState(false);
+  const [scribeTemplatesError, setScribeTemplatesError] = useState<string | null>(null);
   const [finalizedScribeNotes, setFinalizedScribeNotes] = useState<ScribeFinalizedNote[]>([]);
   const [finalizedScribeNotesLoading, setFinalizedScribeNotesLoading] = useState(false);
   const [selectedFinalizedNoteId, setSelectedFinalizedNoteId] = useState<string | null>(null);
@@ -467,13 +468,18 @@ export const PatientWorkspace: React.FC<Props> = ({
   // Load scribe templates from Supabase (for SOAP resolution)
   useEffect(() => {
     setScribeTemplatesLoading(true);
+    setScribeTemplatesError(null);
     getScribeTemplates()
       .then((templates) => {
         setScribeTemplates(templates);
+        setScribeTemplatesError(null);
       })
       .catch((err) => {
         console.error('[scribe-templates] load failed', err);
         setScribeTemplates([]);
+        setScribeTemplatesError(
+          getErrorMessage(err) || 'Scribe templates could not be loaded.'
+        );
       })
       .finally(() => {
         setScribeTemplatesLoading(false);
@@ -1444,6 +1450,11 @@ export const PatientWorkspace: React.FC<Props> = ({
                     >
                       {scribeGenerating ? 'Generating...' : 'Generate Scribe Note'}
                     </button>
+                    {scribeTemplatesError && (
+                      <span className="text-xs font-medium text-red-700" role="alert">
+                        {scribeTemplatesError}
+                      </span>
+                    )}
                     {activeTemplate && !scribeTemplatesLoading && activeScribeMeta && !activeScribeMeta.is_streamable && (
                       <span className="text-xs font-medium text-amber-700">
                         Template not streamable — activate a style prompt or choose another template.

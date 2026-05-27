@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describeDatabaseTarget } from '../lib/databaseTargets';
+import { resolveScribeRouteMode } from '../lib/startupDatabaseValidation';
 import {
   resolveScribeDatabaseConnectionString,
   ScribeDatabaseConfigError,
@@ -120,11 +121,41 @@ function testLabelsNeverContainPassword() {
   assert.ok(!label.includes('82jbol'));
 }
 
+function testBridgeModeUsesInProcessScribeDespiteUpstreamUrl() {
+  withEnv(
+    {
+      NODE_ENV: 'production',
+      SCRIBE_DATABASE_URL: SUPABASE_URL,
+      DATABASE_URL: RDS_URL,
+      SCRIBE_SERVICE_URL: 'https://halo-api-scribe-production.example.herokuapp.com',
+    },
+    () => {
+      assert.equal(resolveScribeRouteMode(), 'in-process');
+    }
+  );
+}
+
+function testProxyOnlyWhenNoBridgeDb() {
+  withEnv(
+    {
+      NODE_ENV: 'production',
+      SCRIBE_DATABASE_URL: undefined,
+      DATABASE_URL: RDS_URL,
+      SCRIBE_SERVICE_URL: 'https://halo-api-scribe-production.example.herokuapp.com',
+    },
+    () => {
+      assert.equal(resolveScribeRouteMode(), 'proxy');
+    }
+  );
+}
+
 testDescribeDatabaseTarget();
 testProductionRequiresScribeUrlWhenMainIsRds();
 testProductionBridgeUsesScribeUrl();
 testDedicatedScribeAppMayUseSupabaseDatabaseUrl();
 testDevelopmentFallbackToDatabaseUrl();
 testLabelsNeverContainPassword();
+testBridgeModeUsesInProcessScribeDespiteUpstreamUrl();
+testProxyOnlyWhenNoBridgeDb();
 
 console.log('scribe-db-architecture.test.ts: all assertions passed');
