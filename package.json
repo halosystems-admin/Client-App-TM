@@ -83,6 +83,9 @@
     "test:scribe-document-sync-job-guards": "node scripts/test-scribe-document-sync-job-guards.js",
     "test:docx-markdown": "ts-node server/tests/docx-markdown.test.ts",
     "test:scribe-markdown-normalize": "ts-node server/tests/scribe-markdown-normalize.test.ts",
+    "test:scribe-db-architecture": "ts-node server/tests/scribe-db-architecture.test.ts",
+    "test:scribe-practice-scope": "ts-node server/tests/scribe-practice-scope.test.ts",
+    "test:scribe-db-smoke": "node scripts/test-scribe-db-architecture-smoke.js",
     "start": "if [ \"$IS_FRONTEND\" = \"true\" ]; then cd client && npm start; else node dist/server/index.js; fi"
   },
   "keywords": [],

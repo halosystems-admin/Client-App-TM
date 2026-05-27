@@ -22,6 +22,10 @@ import { startScheduler } from './jobs/scheduler';
 import { attachTranscribeWebSocket } from './ws/transcribe';
 import { startDocumentSyncWorker } from './workers/documentSyncWorker';
 import { shouldStartDocumentSyncWorker } from './lib/documentSyncJobGuards';
+import {
+  resolveScribeRouteMode,
+  validateAndLogDatabaseTargets,
+} from './lib/startupDatabaseValidation';
 
 if (!config.isProduction) {
   console.log('[startup] Scribe local guard flags', {
@@ -50,6 +54,7 @@ function createSessionStore(): session.Store | undefined {
     return undefined;
   }
 
+  // Main app / OAuth / session persistence — AWS RDS on halo-main (never halo-core Supabase).
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) {
     console.error('DATABASE_URL is required in production for session persistence.');
@@ -64,6 +69,9 @@ function createSessionStore(): session.Store | undefined {
     createTableIfMissing: true,
   });
 }
+
+const scribeRouteMode = resolveScribeRouteMode();
+validateAndLogDatabaseTargets({ scribeRouteMode });
 
 // --- Global Rate Limiter ---
 const globalLimiter = rateLimit({
@@ -131,9 +139,11 @@ app.use('/api/request-template', requestTemplateRoutes);
 const scribeServiceUrl = (config.scribeServiceUrl || '').trim();
 const scribeRoutes = scribeServiceUrl ? scribeProxyRoutes : scribeDirectRoutes;
 if (scribeServiceUrl) {
-  console.log('[scribe] Using upstream Scribe service proxy');
+  console.log('[scribe] Using upstream Scribe service proxy', {
+    upstream: scribeServiceUrl.replace(/:[^:@/]+@/, ':***@'),
+  });
 } else {
-  console.log('[scribe] Using in-process Scribe routes (halo-core DATABASE_URL)');
+  console.log('[scribe] Using in-process Scribe routes (halo-core via SCRIBE_DATABASE_URL)');
 }
 app.use('/api/scribe', requireAuth, scribeRoutes);
 

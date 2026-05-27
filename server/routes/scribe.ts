@@ -122,31 +122,6 @@ type GenerateScribeRequestInput = Omit<GenerateScribeRequest, 'practiceId'> & {
   practiceId?: string;
 };
 
-async function resolvePracticeId(inputPracticeId?: string): Promise<string> {
-  const bodyPracticeId = typeof inputPracticeId === 'string' ? inputPracticeId.trim() : '';
-
-  // req.body.practiceId is local/E2E convenience only; production must not trust it.
-  if (process.env.NODE_ENV !== 'production' && bodyPracticeId) {
-    return bodyPracticeId;
-  }
-
-  const pool = getScribePool();
-
-  const result = await pool.query<{ practice_id: string | null }>(
-    `
-      SELECT nullif(current_setting('app.practice_id', true), '')::text AS practice_id
-    `
-  );
-
-  const resolved = result.rows[0]?.practice_id?.trim() || '';
-
-  if (!resolved) {
-    throw new Error('practiceId is required or app.practice_id must be configured.');
-  }
-
-  return resolved;
-}
-
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value

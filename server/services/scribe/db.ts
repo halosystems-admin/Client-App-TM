@@ -1,31 +1,35 @@
 import pg from 'pg';
-import path from 'path';
 import { config } from '../../config';
+import { resolveScribeDatabaseConnectionString } from './dbConfig';
 
 let scribePool: pg.Pool | null = null;
 
+/**
+ * Dedicated Postgres pool for halo-core Scribe tables only.
+ * Never use for express-session, OAuth, or main app auth storage.
+ */
 export function getScribePool(): pg.Pool {
   if (scribePool) return scribePool;
 
-  const connectionString = (
-    process.env.SCRIBE_DATABASE_URL ||
-    process.env.HALO_PRODUCTION_DATABASE_URL ||
-    process.env.DATABASE_URL ||
-    ''
-  ).trim();
-  if (!connectionString) {
-    throw new Error(
-      `SCRIBE_DATABASE_URL or DATABASE_URL is required for scribe database access. ` +
-      `Expected in ${path.resolve(__dirname, '../../../.env')} or process env. ` +
-      `Current cwd: ${process.cwd()}`
-    );
-  }
+  const connectionString = resolveScribeDatabaseConnectionString();
+
+  const needsSsl =
+    connectionString.includes('supabase') ||
+    connectionString.includes('rds.amazonaws.com') ||
+    config.isProduction;
 
   scribePool = new pg.Pool({
     connectionString,
-    ssl: config.isProduction ? { rejectUnauthorized: false } : undefined,
+    ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
   });
 
-  // TODO: Move to a single shared server DB helper if additional SQL-backed services are added.
   return scribePool;
+}
+
+/** Test-only: reset singleton between tests. */
+export function resetScribePoolForTests(): void {
+  if (scribePool) {
+    void scribePool.end().catch(() => {});
+  }
+  scribePool = null;
 }
