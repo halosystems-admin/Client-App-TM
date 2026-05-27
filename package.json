@@ -86,6 +86,7 @@
     "test:scribe-db-architecture": "ts-node server/tests/scribe-db-architecture.test.ts",
     "test:scribe-practice-scope": "ts-node server/tests/scribe-practice-scope.test.ts",
     "test:scribe-db-smoke": "node scripts/test-scribe-db-architecture-smoke.js",
+    "test:gemini-flash-model": "node scripts/test-gemini-flash-model.js",
     "start": "if [ \"$IS_FRONTEND\" = \"true\" ]; then cd client && npm start; else node dist/server/index.js; fi"
   },
   "keywords": [],
