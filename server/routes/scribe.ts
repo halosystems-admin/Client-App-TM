@@ -234,13 +234,23 @@ router.post('/generate', async (req: Request, res: Response) => {
 
     requirementRows = resolvedRequirements.requirements;
 
+    console.log('[scribe] requirements loaded', {
+      resolvedTemplateId: resolvedRequirements.resolvedTemplateId,
+      requirementCount: requirementRows.length,
+      keys: requirementRows.map((r) => `${r.key}(${r.type}${r.required ? '!' : ''})`),
+    });
+
     if (requirementRows.length > 0) {
       const validation = validateTranscriptAgainstRequirements({
         transcript: parsed.data.rawTranscript,
         requirements: requirementRows,
       });
 
-      console.log('[scribe] extracted_template_variables_json (MVP)', validation.detected);
+      console.log('[scribe] requirement validation result', {
+        ok: validation.ok,
+        detected: validation.detected,
+        missing: validation.missing.map((m) => m.key),
+      });
 
       if (!validation.ok) {
         res.status(422).json({

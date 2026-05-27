@@ -637,17 +637,20 @@ export const PatientWorkspace: React.FC<Props> = ({
           finalizedMarkdown,
           finalizedMarkdown.trim() !== scribeOriginalMarkdown.trim()
         );
-        // Reset Scribe state so user can immediately generate another note
+        // Keep the finalized note visible so the doctor can explicitly "Save Note" to Drive
+        // using the existing working save flow (no history workaround).
         clearScribeDraft();
-        setNoteContent('');
-        setEditMode('write');
-        setPopulateMemoHasBeenCalled(false);
-        setSelectedFinalizedNoteId(null);
-        setSelectedTemplateId(null);
+        setNoteContent(finalizedMarkdown);
+        setEditMode('preview');
+        setPopulateMemoHasBeenCalled(true);
+        setSelectedFinalizedNoteId(scribeOutputId);
+        // IMPORTANT: clear scribeOutputId so the next "Save Note" click files to Drive
+        // (instead of calling finalize again).
+        setScribeOutputId(null);
         await loadFinalizedScribeNotes();
         setActiveTab('notes');
         onDataChange();
-        onToast('Scribe note finalized. Select a template to generate another.', 'success');
+        onToast('Scribe note finalized. Click Save Note to file to Drive.', 'success');
       } catch (err) {
         onToast(getErrorMessage(err), 'error');
       } finally {
@@ -687,11 +690,16 @@ export const PatientWorkspace: React.FC<Props> = ({
         folderPath,
       });
 
-      setNoteContent("");
+      // Reset for next generation after successful Drive save
+      setNoteContent('');
       clearScribeDraft();
+      setEditMode('write');
+      setPopulateMemoHasBeenCalled(false);
+      setSelectedFinalizedNoteId(null);
+      setSelectedTemplateId(null);
       await loadFolderContents(currentFolderId);
       onDataChange();
-      onToast('Note filed to Google Drive.', 'success');
+      onToast('Note saved to Drive. Select a template to generate another.', 'success');
     } catch (err) {
       onToast(getErrorMessage(err), 'error');
     }

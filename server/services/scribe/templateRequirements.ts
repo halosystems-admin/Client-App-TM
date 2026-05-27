@@ -305,6 +305,82 @@ function detectString(req: TemplateRequirementRecord, transcript: string): strin
     return extractReferringDoctorLike(transcript);
   }
 
+  switch (req.key) {
+    case 'patient_name':
+      return extractMedicalCertificatePatientName(transcript);
+    case 'certificate_basis':
+      return extractMedicalCertificateBasis(transcript);
+    case 'pronoun':
+      return extractMedicalCertificatePronoun(transcript);
+    case 'reason':
+      return extractMedicalCertificateReason(transcript);
+    default:
+      return null;
+  }
+}
+
+function extractMedicalCertificatePatientName(transcript: string): string | null {
+  // Match 2-4 capitalised words after "certificate for" / "certify that", stop at sentence boundary
+  const patterns = [
+    /(?:medical\s+certificate|certificate)\s+for\s+([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,3})(?=[.,;\s]|$)/,
+    /(?:certify(?:ing)?\s+that|certifies\s+that)\s*[:\s-]*\s*([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,3})(?=[.,;\s]|$)/,
+  ];
+  for (const re of patterns) {
+    const m = re.exec(transcript);
+    if (m?.[1]) {
+      const name = m[1].trim().replace(/\s+/g, ' ').replace(/[.,;:!?'"]+$/g, '');
+      if (name.length >= 3 && name.split(' ').length <= 5 && !/^please\b/i.test(name)) return name;
+    }
+  }
+  return null;
+}
+
+function extractMedicalCertificateBasis(transcript: string): string | null {
+  const options = [
+    'Based on my examination',
+    'According to my knowledge',
+    'As I was informed',
+  ];
+  const lower = transcript.toLowerCase();
+  for (const opt of options) {
+    if (lower.includes(opt.toLowerCase())) return opt;
+  }
+  if (/\bbased\s+on\s+my\s+examination\b/i.test(transcript)) {
+    return 'Based on my examination';
+  }
+  if (/\baccording\s+to\s+my\s+knowledge\b/i.test(transcript)) {
+    return 'According to my knowledge';
+  }
+  if (/\bas\s+i\s+was\s+informed\b/i.test(transcript)) {
+    return 'As I was informed';
+  }
+  return null;
+}
+
+function extractMedicalCertificatePronoun(transcript: string): string | null {
+  const useAs = /\buse\s+(he|she)\s+as\s+(?:the\s+)?pronoun\b/i.exec(transcript);
+  if (useAs?.[1]) return useAs[1].toLowerCase();
+
+  const wasUnfit = /\b(he|she)\s+was\s+unfit\b/i.exec(transcript);
+  if (wasUnfit?.[1]) return wasUnfit[1].toLowerCase();
+
+  const commaPronoun = /,\s*(he|she)\s+was\s+unfit/i.exec(transcript);
+  if (commaPronoun?.[1]) return commaPronoun[1].toLowerCase();
+
+  return null;
+}
+
+function extractMedicalCertificateReason(transcript: string): string | null {
+  const dueTo = /\bdue\s+to\s+([^.,;\n]+)/i.exec(transcript);
+  if (dueTo?.[1]) {
+    const reason = dueTo[1].trim().replace(/\s+/g, ' ').replace(/[.,;:!?'"]+$/g, '');
+    if (reason.length >= 2) return reason;
+  }
+  for (const keyword of ['illness', 'hospitalization', 'injury']) {
+    if (new RegExp(`\\b${keyword}\\b`, 'i').test(transcript)) {
+      return keyword;
+    }
+  }
   return null;
 }
 
@@ -380,6 +456,26 @@ function extractDateForRequirementKey(key: string, transcript: string): string |
   const text = transcript.trim();
   if (!text) return null;
 
+  if (key === 'examined_date') {
+    const examinedTodayExplicit =
+      /examined\s+by\s+me\s+(?:today,?\s*)?(\d{1,2}\s+[A-Za-z]+\s+\d{4})/i.exec(text);
+    if (examinedTodayExplicit) {
+      const d = parseDateFragment(examinedTodayExplicit[1]);
+      if (d) return d;
+    }
+    const examinedOn = /examined\s+by\s+me\s+on\s+([^.,;\n]+)/i.exec(text);
+    if (examinedOn) {
+      const d = parseDateFragment(examinedOn[1]);
+      if (d) return d;
+    }
+    const examinedGeneric = /examined\s+by\s+me\s+(?:today,?\s*)?([^.,;\n]+)/i.exec(text);
+    if (examinedGeneric) {
+      const fragment = examinedGeneric[1].replace(/^today,?\s*/i, '').trim();
+      const d = parseDateFragment(fragment);
+      if (d) return d;
+    }
+  }
+
   if (key === 'date' || key === 'encounter_date' || key === 'note_date') {
     if (/\b(?:date\s+)?today\b/i.test(text)) {
       const relative = resolveRelativeDateWord('today');
@@ -393,9 +489,11 @@ function extractDateForRequirementKey(key: string, transcript: string): string |
   }
 
   const fromTo = /\bfrom\s+([^,\n;]+?)\s+to\s+([^,\n;]+)/i.exec(text);
-  if (fromTo) {
-    const left = parseDateFragment(fromTo[1]);
-    const right = parseDateFragment(fromTo[2]);
+  const unfitFromTo = /\bunfit\s+for\s+work\s+from\s+([^,\n;]+?)\s+to\s+([^,\n;]+)/i.exec(text);
+  const range = unfitFromTo || fromTo;
+  if (range) {
+    const left = parseDateFragment(range[1]);
+    const right = parseDateFragment(range[2]);
     if (key === 'leave_start_date' && left) return left;
     if (key === 'leave_end_date' && right) return right;
   }

@@ -1,12 +1,7 @@
 import { textToDocx } from '../../utils/docx';
 import { convertDocxBufferToPdfBuffer } from '../drive';
 import { config } from '../../config';
-import path from 'path';
-import {
-  buildScribeExportFileName,
-  renderMarkdownIntoDocxTemplate,
-  resolveScribeDocxTemplatePath,
-} from '../../utils/docxTemplate';
+import { buildScribeExportFileName } from '../../utils/docxTemplate';
 
 export type ScribeOutputConfigRow = {
   output_type: string;
@@ -60,26 +55,13 @@ function baseFileStem(input: RenderScribeOutputInput): string {
   return `Scribe_${c}_${Date.now()}`;
 }
 
+// Demo stabilisation: always use the reliable blank-DOCX path.
+// Template header/footer preservation is deferred.
 async function renderDocxFromTemplateOrBlank(
   input: RenderScribeOutputInput,
   md: string,
   stem: string
 ): Promise<Buffer> {
-  const templatePath = resolveScribeDocxTemplatePath(
-    input.templateConfig?.docx_template_drive_id,
-    input.templateName
-  );
-  if (templatePath) {
-    console.log('[renderScribeOutput] using DOCX template shell', {
-      templateName: input.templateName ?? null,
-      templatePath: path.basename(templatePath),
-    });
-    return renderMarkdownIntoDocxTemplate(templatePath, md);
-  }
-  console.warn('[renderScribeOutput] DOCX template shell not found; falling back to blank DOCX', {
-    templateName: input.templateName ?? null,
-    ref: input.templateConfig?.docx_template_drive_id ?? null,
-  });
   return textToDocx(md, stem);
 }
 
