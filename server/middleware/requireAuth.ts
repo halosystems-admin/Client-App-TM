@@ -11,6 +11,8 @@ declare module 'express-session' {
     userId?: string;
     practiceId?: string;
     practice_id?: string;
+    scribeUserId?: string;
+    scribe_user_id?: string;
   }
 }
 

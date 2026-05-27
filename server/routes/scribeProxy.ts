@@ -100,11 +100,7 @@ async function proxyScribeRequest(req: Request, res: Response): Promise<void> {
   }
 }
 
-router.post('/generate', (req: Request, res: Response) => {
-  void proxyScribeRequest(req, res);
-});
-
-router.post('/:outputId/finalize', (req: Request, res: Response) => {
+router.all('*', (req: Request, res: Response) => {
   void proxyScribeRequest(req, res);
 });
 

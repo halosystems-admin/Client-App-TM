@@ -55,6 +55,7 @@ export interface AuthMeResponse {
   googleUserId?: string;
   appUserId?: string;
   practiceId?: string;
+  scribeUserId?: string;
   // Backward-compatible alias while clients migrate.
   user_id?: string;
   notesApiAvailable?: boolean;
@@ -361,6 +362,8 @@ export interface ScribeTemplate {
   firebase_template_id?: string | null;
   output_format?: string | null;
   is_streamable: boolean;
+  has_active_prompt?: boolean;
+  version?: number | null;
   /** Dictation hints from scribe_template_requirements (never includes system_prompt_md). */
   requirements?: ScribeTemplateRequirement[];
 }

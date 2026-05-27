@@ -20,6 +20,7 @@ import {
   type TemplateRequirementRecord,
 } from '../services/scribe/templateRequirements';
 import { listFinalizedScribeNotesForPatient } from '../services/scribe/listFinalizedNotes';
+import { resolveScribePracticeContext } from '../services/scribe/sessionPracticeContext';
 
 const router = express.Router();
 
@@ -157,133 +158,6 @@ function isPostgresUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
 }
 
-/** Same dummy used when session/auth practice is missing in non-production; matches typical dev scribe_outputs rows. */
-const LOCAL_DEV_FALLBACK_PRACTICE_ID = '44444444-4444-4444-4444-444444444444';
-
-function extractTrustedPracticeIdFromRequest(req: Request): string | null {
-  const rawPracticeId =
-    (req as unknown as { user?: { practiceId?: unknown; practice_id?: unknown } }).user?.practiceId ??
-    (req as unknown as { user?: { practiceId?: unknown; practice_id?: unknown } }).user?.practice_id ??
-    (req as unknown as { auth?: { practiceId?: unknown; practice_id?: unknown } }).auth?.practiceId ??
-    (req as unknown as { auth?: { practiceId?: unknown; practice_id?: unknown } }).auth?.practice_id ??
-    (req as unknown as { session?: { practiceId?: unknown; practice_id?: unknown } }).session?.practiceId ??
-    (req as unknown as { session?: { practiceId?: unknown; practice_id?: unknown } }).session?.practice_id ??
-    '';
-
-  const practiceId = typeof rawPracticeId === 'string' ? rawPracticeId.trim() : '';
-  return practiceId && isPostgresUuid(practiceId) ? practiceId : null;
-}
-
-/**
- * Resolves practice for finalize/save (never reads req.body / req.query practiceId).
- * Order matches generate’s trusted sources: session/auth → DB app.practice_id (resolvePracticeId) → non-prod dummy.
- */
-async function resolvePracticeContextForFinalize(req: Request): Promise<
-  { ok: true; practiceId: string } | { ok: false }
-> {
-  const fromSession = extractTrustedPracticeIdFromRequest(req);
-  if (fromSession) {
-    return { ok: true, practiceId: fromSession };
-  }
-
-  try {
-    const fromDbSetting = await resolvePracticeId(undefined);
-    if (fromDbSetting && isPostgresUuid(fromDbSetting)) {
-      return { ok: true, practiceId: fromDbSetting };
-    }
-  } catch {
-    // Missing app.practice_id or pool — fall through to dev dummy or 403
-  }
-
-  if (process.env.NODE_ENV !== 'production') {
-    console.warn('⚠️ [scribe] Local Dev: Missing auth context, using dummy practiceId for testing.');
-    return { ok: true, practiceId: LOCAL_DEV_FALLBACK_PRACTICE_ID };
-  }
-
-  return { ok: false };
-}
-
-/**
- * Practice scope for POST /generate.
- * Order: session/auth -> DB app.practice_id -> (non-prod only) valid body practiceId -> non-prod dummy.
- * Production never trusts caller-supplied body practiceId.
- */
-async function resolvePracticeContextForGenerate(
-  req: Request,
-  bodyPracticeId?: string
-): Promise<{ ok: true; practiceId: string } | { ok: false }> {
-  const fromSession = extractTrustedPracticeIdFromRequest(req);
-  if (fromSession) {
-    return { ok: true, practiceId: fromSession };
-  }
-
-  try {
-    const fromDbSetting = await resolvePracticeId(undefined);
-    if (fromDbSetting && isPostgresUuid(fromDbSetting)) {
-      return { ok: true, practiceId: fromDbSetting };
-    }
-  } catch {
-    // fall through
-  }
-
-  if (process.env.NODE_ENV !== 'production') {
-    const bodyId = typeof bodyPracticeId === 'string' ? bodyPracticeId.trim() : '';
-    if (bodyId && isPostgresUuid(bodyId)) {
-      console.log('[scribe/generate] non-production: using practiceId from request body', {
-        practiceId: bodyId,
-      });
-      return { ok: true, practiceId: bodyId };
-    }
-
-    console.warn('[scribe/generate] Local Dev: Missing auth context, using dummy practiceId for testing.');
-    return { ok: true, practiceId: LOCAL_DEV_FALLBACK_PRACTICE_ID };
-  }
-
-  return { ok: false };
-}
-
-/**
- * Practice scope for GET /templates. Never trusts req.query in production.
- * Order: session/auth → DB app.practice_id → (non-prod only) valid query param → non-prod dummy.
- */
-async function resolvePracticeContextForTemplates(req: Request): Promise<
-  { ok: true; practiceId: string } | { ok: false }
-> {
-  const fromSession = extractTrustedPracticeIdFromRequest(req);
-  if (fromSession) {
-    return { ok: true, practiceId: fromSession };
-  }
-
-  try {
-    const fromDbSetting = await resolvePracticeId(undefined);
-    if (fromDbSetting && isPostgresUuid(fromDbSetting)) {
-      return { ok: true, practiceId: fromDbSetting };
-    }
-  } catch {
-    // fall through
-  }
-
-  if (process.env.NODE_ENV !== 'production') {
-    const q = req.query?.practiceId;
-    const queryId =
-      typeof q === 'string'
-        ? q.trim()
-        : Array.isArray(q) && typeof q[0] === 'string'
-          ? q[0].trim()
-          : '';
-    if (queryId && isPostgresUuid(queryId)) {
-      console.log('[scribe/templates] non-production: using practiceId from query string', {
-        practiceId: queryId,
-      });
-      return { ok: true, practiceId: queryId };
-    }
-
-    console.warn('⚠️ [scribe/templates] Local Dev: Missing auth context, using dummy practiceId for testing.');
-    return { ok: true, practiceId: LOCAL_DEV_FALLBACK_PRACTICE_ID };
-  }
-
-  return { ok: false };
-}
 
 function normalizePatientId(value: string): string {
   const trimmed = value.trim();
@@ -312,8 +186,8 @@ router.get('/patients/:patientId/finalized-notes', async (req: Request, res: Res
   }
 
   try {
-    const resolved = await resolvePracticeContextForTemplates(req);
-    if (!resolved.ok) {
+    const resolved = await resolveScribePracticeContext(req, { allowQueryPracticeId: true });
+    if (!resolved) {
       res.status(403).json({ error: 'Forbidden: authenticated practice context is missing.' });
       return;
     }
@@ -343,14 +217,24 @@ router.post('/generate', async (req: Request, res: Response) => {
 
   console.log('[scribe] request validated');
 
-  const resolvedPractice = await resolvePracticeContextForGenerate(req, parsed.data.practiceId);
+  const resolvedPractice = await resolveScribePracticeContext(req, {
+    allowBodyPracticeId: parsed.data.practiceId,
+  });
 
-  if (!resolvedPractice.ok) {
+  if (!resolvedPractice) {
     res.status(403).json({ error: 'Forbidden: authenticated practice context is missing.' });
     return;
   }
 
   const practiceId = resolvedPractice.practiceId;
+  const identity = resolvedPractice.identity;
+
+  console.log('[scribe/generate] resolved context', {
+    email: req.session?.userEmail ?? identity?.email ?? null,
+    userId: identity?.userId ?? req.session?.scribeUserId ?? null,
+    practiceId,
+    templateId: parsed.data.templateId,
+  });
 
   const normalizedPatientId = normalizePatientId(parsed.data.patientId);
   const pool = getScribePool();
@@ -714,19 +598,19 @@ router.post('/:outputId/finalize', async (req: Request, res: Response) => {
     });
   }
 
-  const resolvedPractice = await resolvePracticeContextForFinalize(req);
+  const resolvedPractice = await resolveScribePracticeContext(req);
 
-  if (!resolvedPractice.ok) {
+  if (!resolvedPractice) {
     res.status(403).json({ error: 'Forbidden: authenticated practice context is missing.' });
     return;
   }
 
-  if (isNonProd) {
-    console.log('[scribe] finalize resolved practiceId', {
-      outputId,
-      practiceId: resolvedPractice.practiceId,
-    });
-  }
+  console.log('[scribe] finalize resolved context', {
+    outputId,
+    practiceId: resolvedPractice.practiceId,
+    userId: resolvedPractice.identity?.userId ?? req.session?.scribeUserId ?? null,
+    email: req.session?.userEmail ?? resolvedPractice.identity?.email ?? null,
+  });
 
   try {
     const skipQuery =
@@ -796,14 +680,15 @@ router.post('/:outputId/finalize', async (req: Request, res: Response) => {
 // GET /api/scribe/templates
 router.get('/templates', async (req: Request, res: Response) => {
   try {
-    const resolved = await resolvePracticeContextForTemplates(req);
+    const resolved = await resolveScribePracticeContext(req, { allowQueryPracticeId: true });
 
-    if (!resolved.ok) {
+    if (!resolved) {
       res.status(403).json({ error: 'Forbidden: authenticated practice context is missing.' });
       return;
     }
 
     const practiceId = resolved.practiceId;
+    const identity = resolved.identity;
 
     const pool = getScribePool();
 
@@ -815,6 +700,7 @@ router.get('/templates', async (req: Request, res: Response) => {
       is_default: boolean;
       firebase_template_id: string | null;
       output_format: string | null;
+      version: number | null;
     }>(
       `
         SELECT
@@ -823,7 +709,8 @@ router.get('/templates', async (req: Request, res: Response) => {
           specialty,
           is_default,
           firebase_template_id,
-          output_format
+          output_format,
+          version
         FROM scribe_templates
         WHERE practice_id::text = $1
         ORDER BY is_default DESC, updated_at DESC
@@ -899,9 +786,11 @@ router.get('/templates', async (req: Request, res: Response) => {
     }
 
     // For each template, resolve streamability with the same active-prompt rules as generate.
-    const templates = await Promise.all(
+    const templatesWithMeta = await Promise.all(
       templatesResult.rows.map(async (template) => {
+        const outputFormat = (template.output_format || '').trim().toLowerCase();
         const { isStreamable } = await resolveTemplateStreamabilityStatus(pool, template.id);
+        const markdownReady = outputFormat === 'markdown' && isStreamable;
 
         return {
           id: template.id,
@@ -910,11 +799,24 @@ router.get('/templates', async (req: Request, res: Response) => {
           is_default: template.is_default,
           firebase_template_id: template.firebase_template_id,
           output_format: template.output_format,
-          is_streamable: isStreamable,
+          version: template.version,
+          is_streamable: markdownReady,
+          has_active_prompt: isStreamable,
           requirements: reqsByTemplate.get(template.id) ?? [],
         };
       })
     );
+
+    const templates = templatesWithMeta.filter((t) => t.is_streamable);
+
+    console.log('[scribe/templates] loaded', {
+      email: req.session?.userEmail ?? identity?.email ?? null,
+      userId: identity?.userId ?? req.session?.scribeUserId ?? null,
+      practiceId,
+      totalRows: templatesResult.rows.length,
+      streamableCount: templates.length,
+      templateIds: templates.map((t) => t.id),
+    });
 
     res.status(200).json({ templates });
   } catch (error) {

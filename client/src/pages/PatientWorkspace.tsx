@@ -467,7 +467,7 @@ export const PatientWorkspace: React.FC<Props> = ({
   // Load scribe templates from Supabase (for SOAP resolution)
   useEffect(() => {
     setScribeTemplatesLoading(true);
-    getScribeTemplates(practiceId)
+    getScribeTemplates()
       .then((templates) => {
         setScribeTemplates(templates);
       })
@@ -769,9 +769,9 @@ export const PatientWorkspace: React.FC<Props> = ({
 
   const activeScribeIsStreamable = useMemo(() => {
     if (!activeTemplate) return false;
-    if (scribeTemplatesLoading) return true;
+    if (scribeTemplatesLoading) return false;
     if (activeScribeMeta) return activeScribeMeta.is_streamable;
-    return isPostgresUuid(activeTemplate.id);
+    return false;
   }, [activeTemplate, activeScribeMeta, scribeTemplatesLoading]);
 
   const canGenerateScribeNote = Boolean(
@@ -972,6 +972,16 @@ export const PatientWorkspace: React.FC<Props> = ({
     void openTemplateModal('typed');
   };
 
+  const scribeTemplatesToPickerItems = (items: ScribeTemplate[]): TemplateItem[] =>
+    items
+      .filter((t) => t.is_streamable)
+      .map((t) => ({
+        id: t.id,
+        name: t.name,
+        label: t.name,
+        type: 'scribe',
+      }));
+
   const openTemplateModal = async (mode: 'record' | 'save' | 'typed', pendingStart?: () => void) => {
     setTemplateModalMode(mode);
     setTemplateModalOpen(true);
@@ -1001,22 +1011,31 @@ export const PatientWorkspace: React.FC<Props> = ({
       });
     };
 
-    const cachedTemplates = getCachedTemplates();
-    if (cachedTemplates) {
-      const deduped = cachedTemplates.filter((item) => item.id && item.id !== SOAP_BUILTIN_TEMPLATE.id);
-      const mergedTemplates = [SOAP_BUILTIN_TEMPLATE, ...deduped];
-      setTemplates(mergedTemplates);
-      setTemplatesLoading(false);
-      setTemplatesError(null);
-      applySelection(mergedTemplates);
-      return;
-    }
-
-    setTemplates((prev) => (prev.length > 0 ? prev : [SOAP_BUILTIN_TEMPLATE]));
+    setTemplates((prev) => (prev.length > 0 ? prev : []));
     setTemplatesLoading(true);
     setTemplatesError(null);
 
     try {
+      const supabaseTemplates = scribeTemplates.length > 0 ? scribeTemplates : await getScribeTemplates();
+      const scribePickerItems = scribeTemplatesToPickerItems(supabaseTemplates);
+
+      if (scribePickerItems.length > 0) {
+        setScribeTemplates(supabaseTemplates);
+        setTemplates(scribePickerItems);
+        setTemplatesError(null);
+        applySelection(scribePickerItems);
+        return;
+      }
+
+      const cachedTemplates = getCachedTemplates();
+      if (cachedTemplates) {
+        const deduped = cachedTemplates.filter((item) => item.id && item.id !== SOAP_BUILTIN_TEMPLATE.id);
+        const mergedTemplates = [SOAP_BUILTIN_TEMPLATE, ...deduped];
+        setTemplates(mergedTemplates);
+        applySelection(mergedTemplates);
+        return;
+      }
+
       const state = await getTemplatesUiState();
       const deduped = state.templates.filter((item) => item.id && item.id !== SOAP_BUILTIN_TEMPLATE.id);
       const mergedTemplates = [SOAP_BUILTIN_TEMPLATE, ...deduped];

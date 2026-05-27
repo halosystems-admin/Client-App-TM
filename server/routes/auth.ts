@@ -1,7 +1,10 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { config } from '../config';
-import { getScribePool } from '../services/scribe/db';
+import {
+  applyResolvedScribeIdentityToSession,
+  resolveScribeIdentityFromRequest,
+} from '../services/scribe/resolveScribeIdentity';
 import {
   APPROVED_PRODUCTION_FAKE_E2E_PRACTICE_ID,
   PRODUCTION_FAKE_E2E_SESSION_HEADER,
@@ -147,8 +150,33 @@ async function handleGoogleOAuthCallback(req: Request, res: Response): Promise<v
     });
     const user = (await userInfoRes.json()) as { email?: string; id?: string };
     req.session.userEmail = user.email;
-    // Stable user_id for Notes API / Firebase: prefer id, fallback to email
+    // Stable user_id for Notes API / Firebase: prefer Google subject id, fallback to email
     req.session.userId = user.id || user.email || '';
+
+    try {
+      const identity = await resolveScribeIdentityFromRequest(req);
+      if (identity) {
+        applyResolvedScribeIdentityToSession(req, identity);
+        console.log('[auth/callback] resolved halo-core identity', {
+          email: identity.email,
+          userId: identity.userId,
+          practiceId: identity.practiceId,
+          hasGoogleUid: Boolean(identity.googleUid),
+        });
+      } else {
+        req.session.practiceId = undefined;
+        req.session.practice_id = undefined;
+        req.session.scribeUserId = undefined;
+        req.session.scribe_user_id = undefined;
+        const configuredPracticeId = config.scribePracticeId.trim();
+        if (configuredPracticeId) {
+          req.session.practiceId = configuredPracticeId;
+          req.session.practice_id = configuredPracticeId;
+        }
+      }
+    } catch (identityErr) {
+      console.error('[auth/callback] halo-core identity resolution failed', identityErr);
+    }
 
     console.log(`User signed in: ${user.email}`);
 
@@ -169,56 +197,29 @@ router.get('/me', (req: Request, res: Response) => {
     const appUserId = req.session.userId || req.session.userEmail || '';
     void (async () => {
       let practiceId: string | undefined;
+      let scribeUserId: string | undefined;
+
       try {
-        const pool = getScribePool();
-
-        const defaultResult = await pool.query<{ practice_id: string }>(
-          `
-            SELECT practice_id::text AS practice_id
-            FROM scribe_templates
-            WHERE is_default = true
-            ORDER BY updated_at DESC
-            LIMIT 1
-          `
-        );
-
-        const defaultPracticeId = defaultResult.rows[0]?.practice_id?.trim();
-        if (defaultPracticeId) {
-          practiceId = defaultPracticeId;
-        } else {
-          const distinctResult = await pool.query<{ practice_id: string }>(
-            `
-              SELECT DISTINCT practice_id::text AS practice_id
-              FROM scribe_templates
-              WHERE practice_id IS NOT NULL
-              LIMIT 2
-            `
-          );
-
-          if (distinctResult.rows.length === 1) {
-            const onlyPracticeId = distinctResult.rows[0]?.practice_id?.trim();
-            if (onlyPracticeId) {
-              practiceId = onlyPracticeId;
-            }
-          }
+        const identity = await resolveScribeIdentityFromRequest(req);
+        if (identity) {
+          applyResolvedScribeIdentityToSession(req, identity);
+          practiceId = identity.practiceId;
+          scribeUserId = identity.userId;
         }
-      } catch {
-        // Best-effort only; auth/me remains available even if scribe DB is not ready.
+      } catch (identityErr) {
+        console.error('[auth/me] halo-core identity resolution failed', identityErr);
       }
 
       if (!practiceId) {
         const configuredPracticeId = config.scribePracticeId.trim();
         if (configuredPracticeId) {
           practiceId = configuredPracticeId;
+          req.session.practiceId = configuredPracticeId;
+          req.session.practice_id = configuredPracticeId;
+        } else {
+          req.session.practiceId = undefined;
+          req.session.practice_id = undefined;
         }
-      }
-
-      if (practiceId) {
-        req.session.practiceId = practiceId;
-        req.session.practice_id = practiceId;
-      } else {
-        req.session.practiceId = undefined;
-        req.session.practice_id = undefined;
       }
 
       res.json({
@@ -227,13 +228,17 @@ router.get('/me', (req: Request, res: Response) => {
         googleUserId,
         appUserId,
         practiceId,
+        scribeUserId,
         // Backward-compatible alias consumed by existing clients.
-        user_id: appUserId,
+        user_id: scribeUserId || appUserId,
         notesApiAvailable: !!config.notesApiUrl,
       });
       console.log('[auth/me] response built', {
+        email: req.session.userEmail,
         hasPracticeId: Boolean(practiceId),
         practiceId,
+        scribeUserId,
+        googleUserId: googleUserId ? `${googleUserId.slice(0, 6)}…` : null,
       });
     })();
   } else {
