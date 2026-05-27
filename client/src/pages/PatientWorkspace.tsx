@@ -47,7 +47,7 @@ import { FileViewer } from '../components/FileViewer';
 import { FileBrowser } from '../components/FileBrowser';
 import { NoteEditor } from '../components/NoteEditor';
 import { PatientChat } from '../components/PatientChat';
-import { getErrorMessage } from '../utils/formatting';
+import { getErrorMessage, normalizePatientSummaryBullets } from '../utils/formatting';
 import { parseStructuredNote } from '../utils/structuredNote';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 
@@ -118,6 +118,7 @@ export const PatientWorkspace: React.FC<Props> = ({
   const [showAiPanel, setShowAiPanel] = useState(true);
   /** True until smart summary is resolved (cache or API), independent of folder list loading. */
   const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryUnavailable, setSummaryUnavailable] = useState(false);
 
   // Folder navigation state
   const [currentFolderId, setCurrentFolderId] = useState<string>(patient.id);
@@ -327,6 +328,7 @@ export const PatientWorkspace: React.FC<Props> = ({
     const loadData = async () => {
       setStatus(AppStatus.LOADING);
       setSummaryLoading(true);
+      setSummaryUnavailable(false);
       setSummary([]);
       setAlerts([]);
       setChatMessages([]);
@@ -361,22 +363,33 @@ export const PatientWorkspace: React.FC<Props> = ({
           // 1. We found it in memory! Load it instantly.
           if (isMounted) {
             try {
-              setSummary(JSON.parse(cachedSummary));
+              const bullets = normalizePatientSummaryBullets(JSON.parse(cachedSummary));
+              setSummary(bullets);
+              setSummaryUnavailable(bullets.length === 0);
             } catch {
               setSummary([]);
+              setSummaryUnavailable(true);
             }
             setSummaryLoading(false);
           }
         } else {
           // 2. Not in memory. Ask Gemini to generate it, then save it!
           generatePatientSummary(patient.name, pFiles, patient.id)
-            .then(res => {
-              if (isMounted) {
-                setSummary(res);
-                sessionStorage.setItem(summaryCacheKey, JSON.stringify(res));
+            .then((res) => {
+              if (!isMounted) return;
+              const bullets = normalizePatientSummaryBullets(res);
+              setSummary(bullets);
+              setSummaryUnavailable(bullets.length === 0);
+              if (bullets.length > 0) {
+                sessionStorage.setItem(summaryCacheKey, JSON.stringify(bullets));
               }
             })
-            .catch(() => {})
+            .catch(() => {
+              if (isMounted) {
+                setSummary([]);
+                setSummaryUnavailable(true);
+              }
+            })
             .finally(() => {
               if (isMounted) setSummaryLoading(false);
             });
@@ -1376,6 +1389,7 @@ export const PatientWorkspace: React.FC<Props> = ({
                   key={patient.id}
                   summary={summary}
                   loading={summaryLoading}
+                  unavailable={summaryUnavailable}
                 />
                 {alerts.length > 0 && <div><LabAlerts alerts={alerts} /></div>}
               </div>

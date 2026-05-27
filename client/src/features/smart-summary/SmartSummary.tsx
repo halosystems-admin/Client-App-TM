@@ -4,9 +4,10 @@ import { Sparkles, Loader2, ChevronRight } from 'lucide-react';
 interface Props {
   summary: string[];
   loading: boolean;
+  unavailable?: boolean;
 }
 
-export const SmartSummary: React.FC<Props> = ({ summary, loading }) => {
+export const SmartSummary: React.FC<Props> = ({ summary, loading, unavailable = false }) => {
   /** Collapsed by default; bullets only after user opens. */
   const [expanded, setExpanded] = useState(false);
   const hasBullets = summary.length > 0;
@@ -39,11 +40,13 @@ export const SmartSummary: React.FC<Props> = ({ summary, loading }) => {
               <p className="truncate text-xs font-medium text-slate-800">
                 {loading
                   ? 'Generating…'
-                  : hasBullets
-                    ? expanded
-                      ? 'Hide highlights'
-                      : `${summary.length} highlight${summary.length === 1 ? '' : 's'} · Show`
-                    : 'No summary yet'}
+                  : unavailable
+                    ? 'Smart summary unavailable.'
+                    : hasBullets
+                      ? expanded
+                        ? 'Hide highlights'
+                        : `${summary.length} highlight${summary.length === 1 ? '' : 's'} · Show`
+                      : 'No summary yet'}
               </p>
             </div>
           </div>
@@ -71,7 +74,9 @@ export const SmartSummary: React.FC<Props> = ({ summary, loading }) => {
               ))}
             </ul>
           ) : (
-            <p className="px-1 py-2 text-sm italic text-slate-500">No summary available.</p>
+            <p className="px-1 py-2 text-sm italic text-slate-500">
+              {unavailable ? 'Smart summary unavailable.' : 'No summary available.'}
+            </p>
           )}
         </div>
       )}

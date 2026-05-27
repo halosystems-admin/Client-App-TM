@@ -1,10 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
 import { config } from '../config';
 
-// Current Gemini model names.
-// Use env override if needed, but default to Gemini 2.5 Flash for speed.
-export const PRO_MODEL = process.env.GEMINI_PRO_MODEL || 'gemini-3-pro-preview';
-export const FLASH_MODEL = process.env.GEMINI_FLASH_MODEL || 'gemini-3-flash-preview';
+// Stable Gemini model IDs (override via GEMINI_PRO_MODEL / GEMINI_FLASH_MODEL).
+export const PRO_MODEL = process.env.GEMINI_PRO_MODEL || 'gemini-2.5-pro';
+export const FLASH_MODEL = process.env.GEMINI_FLASH_MODEL || 'gemini-2.5-flash';
 
 export const MAX_RETRIES = 2;
 export const BASE_RETRY_DELAY_MS = 2000;

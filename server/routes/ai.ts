@@ -89,12 +89,17 @@ router.post('/summary', async (req: Request, res: Response) => {
       summaryPrompt(patientName, fileContext),
       userId,
       'Gemini-Patient-Summary',
-      true
+      false
     );
-    res.json(safeJsonParse<string[]>(text, ['Summary unavailable.']));
+    const parsed = safeJsonParse<string[]>(text, []);
+    const bullets = (Array.isArray(parsed) ? parsed : [])
+      .map((item) => String(item || '').trim())
+      .filter((item) => item.length > 0 && !/^summary unavailable/i.test(item));
+    res.json(bullets);
   } catch (err) {
-    console.error('Summary error:', err);
-    res.json(['Summary unavailable.']);
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn('[ai/summary] unavailable', { message: message.slice(0, 200) });
+    res.json([]);
   }
 });
 

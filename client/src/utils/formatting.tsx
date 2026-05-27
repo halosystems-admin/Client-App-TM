@@ -59,3 +59,11 @@ export function getErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   return 'An unexpected error occurred.';
 }
+
+/** Drop empty or legacy placeholder bullets from smart summary API/cache. */
+export function normalizePatientSummaryBullets(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => String(item ?? '').trim())
+    .filter((item) => item.length > 0 && !/^summary unavailable/i.test(item));
+}
