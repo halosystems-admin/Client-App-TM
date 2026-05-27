@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { getOrCreatePatientNotesFolder, uploadToDrive } from '../drive';
+import { getOrCreatePatientNotesFolder, getOrCreateChildFolder, uploadToDrive } from '../drive';
 
 export type UploadScribeRenderedInput = {
   accessToken: string | null;
@@ -8,6 +8,8 @@ export type UploadScribeRenderedInput = {
   fileName: string;
   mimeType: string;
   buffer: Buffer;
+  /** When set, file is saved under Patient Notes / {templateFolderName} / */
+  templateFolderName?: string | null;
   /** When true, skip real Drive multipart upload (local/CI). */
   useMockUpload?: boolean;
 };
@@ -48,12 +50,17 @@ export async function uploadScribeRenderedFile(input: UploadScribeRenderedInput)
     mimeType: input.mimeType,
   });
 
-  const parent = await getOrCreatePatientNotesFolder(input.accessToken, input.patientFolderId);
+  const patientNotesFolderId = await getOrCreatePatientNotesFolder(input.accessToken, input.patientFolderId);
+  const templateFolder = (input.templateFolderName || '').trim();
+  const parentFolderId = templateFolder
+    ? await getOrCreateChildFolder(input.accessToken, patientNotesFolderId, templateFolder)
+    : patientNotesFolderId;
+
   const driveFileId = await uploadToDrive(
     input.accessToken,
     input.fileName,
     input.mimeType,
-    parent,
+    parentFolderId,
     input.buffer,
     {
       haloSource: 'scribe_document_sync',

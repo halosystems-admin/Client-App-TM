@@ -637,15 +637,17 @@ export const PatientWorkspace: React.FC<Props> = ({
           finalizedMarkdown,
           finalizedMarkdown.trim() !== scribeOriginalMarkdown.trim()
         );
+        // Reset Scribe state so user can immediately generate another note
         clearScribeDraft();
-        setNoteContent(finalizedMarkdown);
-        setEditMode('preview');
-        setPopulateMemoHasBeenCalled(true);
-        setSelectedFinalizedNoteId(scribeOutputId);
+        setNoteContent('');
+        setEditMode('write');
+        setPopulateMemoHasBeenCalled(false);
+        setSelectedFinalizedNoteId(null);
+        setSelectedTemplateId(null);
         await loadFinalizedScribeNotes();
         setActiveTab('notes');
         onDataChange();
-        onToast('Scribe note finalized.', 'success');
+        onToast('Scribe note finalized. Select a template to generate another.', 'success');
       } catch (err) {
         onToast(getErrorMessage(err), 'error');
       } finally {
@@ -663,46 +665,22 @@ export const PatientWorkspace: React.FC<Props> = ({
 
     setStatus(AppStatus.FILING);
     try {
-      const isClerk =
-        (activeTemplate.type && String(activeTemplate.type).toLowerCase() === 'clerk') ||
-        (activeTemplate.name &&
-          activeTemplate.name.toLowerCase().includes('clerk')) ||
-        (activeTemplate.name &&
-          activeTemplate.name.toLowerCase() === 'clinical notes');
-
       const today = new Date();
       const yyyy = today.getFullYear();
       const mm = String(today.getMonth() + 1).padStart(2, '0');
       const dd = String(today.getDate()).padStart(2, '0');
       const dateStr = `${yyyy}-${mm}-${dd}`;
 
-      let folderPath = 'Patient Notes';
-      let fileName = '';
+      const templateName = String(
+        activeTemplate.name || activeTemplate.label || activeTemplate.id
+      )
+        .trim()
+        .replace(/[\\/]+/g, ' ')
+        .replace(/\s+/g, ' ');
 
-      if (isClerk) {
-        fileName = `Clinical Notes - ${dateStr}`;
-      } else {
-        const templateName = String(
-          activeTemplate.name || activeTemplate.label || activeTemplate.id
-        )
-          .trim()
-          .replace(/[\\/]+/g, ' ')
-          .replace(/\s+/g, ' ');
-        fileName = `${templateName} - ${dateStr}`;
-
-        // Ensure categorical subfolder exists under Patient Notes
-        const baseName = templateName.trim();
-        let categoryFolderName = '';
-        if (/soap/i.test(baseName)) {
-          categoryFolderName = 'SOAP Notes';
-        } else if (/operat/i.test(baseName)) {
-          categoryFolderName = 'Operative Notes';
-        } else {
-          categoryFolderName = `${baseName} Notes`;
-        }
-
-        folderPath = categoryFolderName;
-      }
+      // Use template name as both the subfolder and file name prefix
+      const folderPath = templateName;
+      const fileName = `${templateName} - ${dateStr}`;
 
       await saveNote(patient.id, noteContent, {
         fileName,

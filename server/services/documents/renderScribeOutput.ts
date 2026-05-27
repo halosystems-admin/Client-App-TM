@@ -1,6 +1,12 @@
 import { textToDocx } from '../../utils/docx';
 import { convertDocxBufferToPdfBuffer } from '../drive';
 import { config } from '../../config';
+import path from 'path';
+import {
+  buildScribeExportFileName,
+  renderMarkdownIntoDocxTemplate,
+  resolveScribeDocxTemplatePath,
+} from '../../utils/docxTemplate';
 
 export type ScribeOutputConfigRow = {
   output_type: string;
@@ -18,6 +24,7 @@ export type RenderScribeOutputInput = {
   patientId: string;
   consultationId: string;
   templateId: string | null;
+  templateName?: string | null;
 };
 
 export type RenderScribeDeps = {
@@ -45,8 +52,35 @@ export type RenderErr = {
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 function baseFileStem(input: RenderScribeOutputInput): string {
+  const named = (input.templateName || '').trim();
+  if (named) {
+    return buildScribeExportFileName(named, 'docx').replace(/\.docx$/i, '');
+  }
   const c = (input.consultationId || 'consult').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 12);
   return `Scribe_${c}_${Date.now()}`;
+}
+
+async function renderDocxFromTemplateOrBlank(
+  input: RenderScribeOutputInput,
+  md: string,
+  stem: string
+): Promise<Buffer> {
+  const templatePath = resolveScribeDocxTemplatePath(
+    input.templateConfig?.docx_template_drive_id,
+    input.templateName
+  );
+  if (templatePath) {
+    console.log('[renderScribeOutput] using DOCX template shell', {
+      templateName: input.templateName ?? null,
+      templatePath: path.basename(templatePath),
+    });
+    return renderMarkdownIntoDocxTemplate(templatePath, md);
+  }
+  console.warn('[renderScribeOutput] DOCX template shell not found; falling back to blank DOCX', {
+    templateName: input.templateName ?? null,
+    ref: input.templateConfig?.docx_template_drive_id ?? null,
+  });
+  return textToDocx(md, stem);
 }
 
 async function tryMergeToPdfFromDocx(docxBuffer: Buffer): Promise<Buffer | null> {
@@ -102,6 +136,9 @@ export async function renderScribeOutput(
   }
 
   const stem = baseFileStem(input);
+  const exportFileName = (input.templateName || '').trim()
+    ? buildScribeExportFileName(input.templateName!.trim(), 'docx')
+    : `${stem}.docx`;
   const ot = (input.templateConfig?.output_type || '').trim().toLowerCase();
 
   const forceMockDocx =
@@ -110,12 +147,12 @@ export async function renderScribeOutput(
       (!deps.accessToken?.trim() || !deps.driveParentFolderIdForConversion?.trim()));
 
   if (forceMockDocx && ot !== 'pdf_fill') {
-    const docxBuf = await textToDocx(md, stem);
+    const docxBuf = await renderDocxFromTemplateOrBlank(input, md, stem);
     return {
       ok: true,
       buffer: docxBuf,
       mimeType: DOCX_MIME,
-      filename: `${stem}.docx`,
+      filename: exportFileName,
       outputKind: 'docx_export',
     };
   }
@@ -129,7 +166,7 @@ export async function renderScribeOutput(
           'pdf_fill requires pdf_template_drive_id and a full merge pipeline; use default markdown PDF or enable SCRIBE_MERGE_PDF_ENABLED with /merge_to_pdf.',
       };
     }
-    const docxBuf = await textToDocx(md, stem);
+    const docxBuf = await renderDocxFromTemplateOrBlank(input, md, stem);
     const merged = await tryMergeToPdfFromDocx(docxBuf);
     if (!merged) {
       return {
@@ -149,12 +186,12 @@ export async function renderScribeOutput(
   }
 
   if (ot === 'docx_on_demand' || ot === 'docx') {
-    const docxBuf = await textToDocx(md, stem);
+    const docxBuf = await renderDocxFromTemplateOrBlank(input, md, stem);
     return {
       ok: true,
       buffer: docxBuf,
       mimeType: DOCX_MIME,
-      filename: `${stem}.docx`,
+      filename: exportFileName,
       outputKind: 'docx_export',
     };
   }
@@ -168,7 +205,7 @@ export async function renderScribeOutput(
   }
 
   try {
-    const docxBuf = await textToDocx(md, stem);
+    const docxBuf = await renderDocxFromTemplateOrBlank(input, md, stem);
     const pdfBuf = await convertDocxBufferToPdfBuffer(
       deps.accessToken,
       docxBuf,

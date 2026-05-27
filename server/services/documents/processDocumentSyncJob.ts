@@ -62,6 +62,18 @@ async function readFinalMarkdownFromPayload(
   return r.rows[0]?.final_markdown?.trim() ?? '';
 }
 
+async function loadTemplateName(
+  client: PoolClient,
+  templateId: string | null
+): Promise<string | null> {
+  if (!templateId) return null;
+  const r = await client.query<{ name: string }>(
+    `SELECT name FROM scribe_templates WHERE id::text = $1 LIMIT 1`,
+    [templateId]
+  );
+  return r.rows[0]?.name?.trim() || null;
+}
+
 async function loadOutputConfig(
   client: PoolClient,
   templateId: string | null
@@ -173,6 +185,17 @@ export async function processClaimedDocumentSyncJob(
       return;
     }
 
+    let templateName: string | null = null;
+    try {
+      templateName =
+        typeof payload.templateName === 'string' && payload.templateName.trim()
+          ? payload.templateName.trim()
+          : await loadTemplateName(client, templateId);
+    } catch (e) {
+      await markJobFailure(client, jobId, e instanceof Error ? e.message : String(e), maxAttempts);
+      return;
+    }
+
     const mockPipeline = useMockDrivePipeline();
 
     let accessToken: string | null = null;
@@ -203,6 +226,7 @@ export async function processClaimedDocumentSyncJob(
       patientId,
       consultationId,
       templateId,
+      templateName,
     };
 
     let render: RenderOk | RenderErr;
@@ -230,6 +254,7 @@ export async function processClaimedDocumentSyncJob(
         fileName: render.filename,
         mimeType: render.mimeType,
         buffer: render.buffer,
+        templateFolderName: templateName,
         useMockUpload: mockPipeline,
       });
     } catch (e) {

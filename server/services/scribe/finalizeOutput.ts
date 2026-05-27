@@ -479,6 +479,20 @@ export async function finalizeScribeOutput(
         finalMarkdownLength: input.finalMarkdown.length,
       });
     } else {
+      // Resolve template name for folder/filename in document sync pipeline
+      let templateNameForJob: string | null = null;
+      if (currentRow.template_id) {
+        try {
+          const tnResult = await client.query<{ name: string }>(
+            `SELECT name FROM scribe_templates WHERE id = $1::uuid LIMIT 1`,
+            [currentRow.template_id]
+          );
+          templateNameForJob = tnResult.rows[0]?.name?.trim() || null;
+        } catch (_) {
+          // non-fatal: pipeline will fall back to no-folder mode
+        }
+      }
+
       const documentJobPayload = {
         sourceType: 'scribe_output',
         sourceId: outputId,
@@ -490,6 +504,7 @@ export async function finalizeScribeOutput(
         status: 'pending',
         consultationId: currentRow.consultation_id,
         templateId: currentRow.template_id,
+        templateName: templateNameForJob,
         finalMarkdown: input.finalMarkdown,
         finalMarkdownHash,
         extractedTemplateVariables: extractedVars,
