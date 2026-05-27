@@ -100,7 +100,19 @@ async function proxyScribeRequest(req: Request, res: Response): Promise<void> {
   }
 }
 
-router.all('*', (req: Request, res: Response) => {
+router.get('/templates', (req: Request, res: Response) => {
+  void proxyScribeRequest(req, res);
+});
+
+router.get('/patients/:patientId/finalized-notes', (req: Request, res: Response) => {
+  void proxyScribeRequest(req, res);
+});
+
+router.post('/generate', (req: Request, res: Response) => {
+  void proxyScribeRequest(req, res);
+});
+
+router.post('/:outputId/finalize', (req: Request, res: Response) => {
   void proxyScribeRequest(req, res);
 });
 
