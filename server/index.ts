@@ -15,7 +15,8 @@ import notesProxyRoutes from './routes/notesProxy';
 import calendarRoutes from './routes/calendar';
 import haloRoutes from './routes/halo';
 import requestTemplateRoutes from './routes/requestTemplate';
-import scribeRoutes from './routes/scribeProxy';
+import scribeProxyRoutes from './routes/scribeProxy';
+import scribeDirectRoutes from './routes/scribe';
 import { requireAuth } from './middleware/requireAuth';
 import { startScheduler } from './jobs/scheduler';
 import { attachTranscribeWebSocket } from './ws/transcribe';
@@ -127,8 +128,14 @@ app.use('/api/notes', requireAuth, notesProxyRoutes);
 app.use('/api/calendar', requireAuth, calendarRoutes);
 app.use('/api/halo', haloRoutes);
 app.use('/api/request-template', requestTemplateRoutes);
+const scribeServiceUrl = (config.scribeServiceUrl || '').trim();
+const scribeRoutes = scribeServiceUrl ? scribeProxyRoutes : scribeDirectRoutes;
+if (scribeServiceUrl) {
+  console.log('[scribe] Using upstream Scribe service proxy');
+} else {
+  console.log('[scribe] Using in-process Scribe routes (halo-core DATABASE_URL)');
+}
 app.use('/api/scribe', requireAuth, scribeRoutes);
-// app.use('/api/scribe', scribeRoutes); //Temporarily replace above line if needed for testing
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {
