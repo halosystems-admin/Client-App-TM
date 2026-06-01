@@ -79,6 +79,55 @@ async function* createRehearsalMockTextStream(): AsyncGenerator<string> {
   }
 }
 
+function readOptionalTranscriptString(
+  body: Record<string, unknown>,
+  camelKey: string,
+  snakeKey: string,
+  fallback = 'unknown'
+): string {
+  const raw =
+    typeof body[camelKey] === 'string'
+      ? body[camelKey]
+      : typeof body[snakeKey] === 'string'
+        ? body[snakeKey]
+        : '';
+  const value = String(raw || '').trim();
+  return value || fallback;
+}
+
+function readOptionalTranscriptNumber(
+  body: Record<string, unknown>,
+  camelKey: string,
+  snakeKey: string
+): number | null {
+  const raw = body[camelKey] ?? body[snakeKey];
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === 'string') {
+    const parsed = Number(raw.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function readTranscriptMetadata(body: Record<string, unknown>): Record<string, unknown> {
+  const candidates = [
+    body.transcriptMetadata,
+    body.transcript_metadata,
+    body.providerMetadata,
+    body.provider_metadata,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+      return candidate as Record<string, unknown>;
+    }
+  }
+
+  return {};
+}
+
 function validateGenerateScribeBody(
   rawBody: unknown
 ): { ok: true; data: GenerateScribeRequestInput } | { ok: false; message: string } {
@@ -89,6 +138,19 @@ function validateGenerateScribeBody(
   const consultationId = typeof body.consultationId === 'string' ? body.consultationId.trim() : '';
   const templateId = typeof body.templateId === 'string' ? body.templateId.trim() : '';
   const rawTranscript = typeof body.rawTranscript === 'string' ? body.rawTranscript.trim() : '';
+  const transcriptSource = readOptionalTranscriptString(body, 'transcriptSource', 'transcript_source');
+  const transcriptLanguage = readOptionalTranscriptString(body, 'transcriptLanguage', 'transcript_language');
+  const transcriptDurationSeconds = readOptionalTranscriptNumber(
+    body,
+    'transcriptDurationSeconds',
+    'transcript_duration_seconds'
+  );
+  const transcriptConfidence = readOptionalTranscriptNumber(
+    body,
+    'transcriptConfidence',
+    'transcript_confidence'
+  );
+  const transcriptMetadata = readTranscriptMetadata(body);
 
   if (!patientId) {
     return { ok: false, message: 'patientId is required.' };
@@ -114,12 +176,22 @@ function validateGenerateScribeBody(
       consultationId,
       templateId,
       rawTranscript,
+      transcriptSource,
+      transcriptLanguage,
+      transcriptDurationSeconds,
+      transcriptConfidence,
+      transcriptMetadata,
     },
   };
 }
 
 type GenerateScribeRequestInput = Omit<GenerateScribeRequest, 'practiceId'> & {
   practiceId?: string;
+  transcriptSource?: string;
+  transcriptLanguage?: string;
+  transcriptDurationSeconds?: number | null;
+  transcriptConfidence?: number | null;
+  transcriptMetadata?: Record<string, unknown>;
 };
 
 function isUuid(value: string): boolean {
@@ -466,6 +538,12 @@ router.post('/generate', async (req: Request, res: Response) => {
                 templateId: resolvedTemplateId,
                 practiceId,
                 patientId: normalizedPatientId,
+                rawTranscript: parsed.data.rawTranscript,
+                transcriptSource: parsed.data.transcriptSource,
+                transcriptLanguage: parsed.data.transcriptLanguage,
+                transcriptDurationSeconds: parsed.data.transcriptDurationSeconds,
+                transcriptConfidence: parsed.data.transcriptConfidence,
+                transcriptMetadata: parsed.data.transcriptMetadata,
                 systemFields: prompt.systemFields,
                 conditionalFields: prompt.conditionalFields,
                 extractedTemplateVariables: extractedTemplateVariables ?? null,

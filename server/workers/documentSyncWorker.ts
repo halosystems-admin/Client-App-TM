@@ -10,7 +10,10 @@ export async function processNextDocumentJob() {
 
     const jobResult = await client.query(`
       UPDATE document_sync_jobs
-      SET status = 'processing', updated_at = NOW()
+      SET status = 'processing',
+          attempts = attempts + 1,
+          last_attempted_at = NOW(),
+          updated_at = NOW()
       WHERE id = (
           SELECT id FROM document_sync_jobs
           WHERE status = 'pending'

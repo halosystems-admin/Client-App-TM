@@ -110,6 +110,36 @@ function pickDoctorEdited(body: Record<string, unknown>): boolean {
   return false;
 }
 
+function sanitizeFilenamePart(value: string): string {
+  const cleaned = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return cleaned || 'unknown';
+}
+
+function normalizeJobOutputType(value: string | null | undefined): 'pdf' | 'docx' | 'pdf_fill' {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (normalized === 'docx') return 'docx';
+  if (normalized === 'pdf_fill') return 'pdf_fill';
+  return 'pdf';
+}
+
+function buildDocumentSyncFilename(
+  patientId: string,
+  templateName: string | null,
+  outputType: 'pdf' | 'docx' | 'pdf_fill'
+): string {
+  const datePart = new Date().toISOString().slice(0, 10);
+  const extension = outputType === 'docx' ? 'docx' : 'pdf';
+  const patientPart = sanitizeFilenamePart(patientId);
+  const templatePart = sanitizeFilenamePart(templateName || 'scribe_note');
+  return `${patientPart}_${templatePart}_${datePart}.${extension}`;
+}
+
 async function columnExists(client: PoolClient, tableName: string, columnName: string): Promise<boolean> {
   const result = await client.query<{ exists: boolean }>(
     `
@@ -352,41 +382,83 @@ export async function finalizeScribeOutput(
     }
 
     try {
-      await client.query(
+      const existingScribeEvents = await client.query<{ id: string }>(
         `
-          INSERT INTO consultation_events (
-            consultation_id,
-            patient_id,
-            practice_id,
-            event_type,
-            content_md,
-            event_data
-          )
-          VALUES (
-            $1::uuid,
-            $2::uuid,
-            $3::uuid,
-            $4,
-            $5,
-            $6::jsonb
-          )
+          SELECT id::text AS id
+          FROM consultation_events
+          WHERE event_type = 'scribe_output'
+            AND practice_id::text = $1
+            AND event_data->>'scribe_output_id' = $2
+          ORDER BY created_at ASC, id ASC
         `,
-        [
-          currentRow.consultation_id,
-          currentRow.patient_id,
-          rowPracticeId,
-          'scribe_output',
-          normalizedFinalMarkdown,
-          JSON.stringify(eventPayload),
-        ]
+        [rowPracticeId, outputId]
       );
+
+      if (existingScribeEvents.rows.length === 0) {
+        await client.query(
+          `
+            INSERT INTO consultation_events (
+              consultation_id,
+              patient_id,
+              practice_id,
+              event_type,
+              content_md,
+              event_data
+            )
+            VALUES (
+              $1::uuid,
+              $2::uuid,
+              $3::uuid,
+              $4,
+              $5,
+              $6::jsonb
+            )
+          `,
+          [
+            currentRow.consultation_id,
+            currentRow.patient_id,
+            rowPracticeId,
+            'scribe_output',
+            normalizedFinalMarkdown,
+            JSON.stringify(eventPayload),
+          ]
+        );
+      } else {
+        const primaryId = existingScribeEvents.rows[0].id;
+        await client.query(
+          `
+            UPDATE consultation_events
+            SET consultation_id = $2::uuid,
+                patient_id = $3::uuid,
+                practice_id = $4::uuid,
+                event_type = 'scribe_output',
+                content_md = $5,
+                event_data = $6::jsonb
+            WHERE id = $1::uuid
+          `,
+          [
+            primaryId,
+            currentRow.consultation_id,
+            currentRow.patient_id,
+            rowPracticeId,
+            normalizedFinalMarkdown,
+            JSON.stringify(eventPayload),
+          ]
+        );
+
+        for (const dup of existingScribeEvents.rows.slice(1)) {
+          await client.query(`DELETE FROM consultation_events WHERE id = $1::uuid`, [dup.id]);
+        }
+      }
+
       if (dev) {
-        console.log('[finalizeOutput] INSERT consultation_events ok', {
+        console.log('[finalizeOutput] consultation_events scribe_output row ensured', {
           consultationId: currentRow.consultation_id,
+          existingRows: existingScribeEvents.rows.length,
         });
       }
     } catch (eventErr) {
-      console.error('[finalizeOutput] consultation_events INSERT failed', {
+      console.error('[finalizeOutput] consultation_events upsert/dedupe failed', {
         outputId,
         consultationId: currentRow.consultation_id,
         ...serializePgErrorForDebug(eventErr),
@@ -448,7 +520,7 @@ export async function finalizeScribeOutput(
       throw telemetryErr;
     }
 
-    const finalMarkdownHash = createHash('sha256').update(input.finalMarkdown, 'utf8').digest('hex');
+    const finalMarkdownHash = createHash('sha256').update(normalizedFinalMarkdown, 'utf8').digest('hex');
 
     const extractedVars =
       currentRow.extracted_template_variables_json &&
@@ -473,68 +545,128 @@ export async function finalizeScribeOutput(
       });
     }
 
-    if (skipDocumentSyncJobs) {
-      console.log('[finalizeOutput] document_sync_jobs skipped (AD local/dev guard)', {
+    if (skipDocumentSyncJobs && dev) {
+      console.log('[finalizeOutput] document_sync_jobs skip request ignored to preserve finalize/job consistency', {
         outputId,
-        finalMarkdownLength: input.finalMarkdown.length,
       });
-    } else {
-      // Resolve template name for folder/filename in document sync pipeline
-      let templateNameForJob: string | null = null;
-      if (currentRow.template_id) {
-        try {
-          const tnResult = await client.query<{ name: string }>(
-            `SELECT name FROM scribe_templates WHERE id = $1::uuid LIMIT 1`,
-            [currentRow.template_id]
-          );
-          templateNameForJob = tnResult.rows[0]?.name?.trim() || null;
-        } catch (_) {
-          // non-fatal: pipeline will fall back to no-folder mode
-        }
-      }
+    }
 
-      const documentJobPayload = {
-        sourceType: 'scribe_output',
-        sourceId: outputId,
-        outputId,
-        output_id: outputId,
-        outputType: 'pdf',
-        practiceId: rowPracticeId,
-        patientId: currentRow.patient_id,
-        status: 'pending',
-        consultationId: currentRow.consultation_id,
-        templateId: currentRow.template_id,
-        templateName: templateNameForJob,
-        finalMarkdown: input.finalMarkdown,
-        finalMarkdownHash,
-        extractedTemplateVariables: extractedVars,
-      };
-
-      if (dev) {
-        console.log('[finalizeOutput] INSERT document_sync_jobs start', {
-          outputId,
-          practiceId: rowPracticeId,
-          finalMarkdownHash,
-        });
-      }
+    // Resolve template metadata for folder and filename in document sync pipeline.
+    let templateNameForJob: string | null = null;
+    if (currentRow.template_id) {
       try {
+        const tnResult = await client.query<{ name: string }>(
+          `SELECT name FROM scribe_templates WHERE id = $1::uuid LIMIT 1`,
+          [currentRow.template_id]
+        );
+        templateNameForJob = tnResult.rows[0]?.name?.trim() || null;
+      } catch (_) {
+        // non-fatal: pipeline will fall back to no-folder mode
+      }
+    }
+
+    let selectedOutputType: 'pdf' | 'docx' | 'pdf_fill' = 'pdf';
+    if (currentRow.template_id) {
+      try {
+        const outputConfig = await client.query<{ output_type: string | null }>(
+          `
+            SELECT output_type
+            FROM scribe_output_configs
+            WHERE template_id = $1::uuid
+            ORDER BY created_at DESC NULLS LAST
+            LIMIT 1
+          `,
+          [currentRow.template_id]
+        );
+        selectedOutputType = normalizeJobOutputType(outputConfig.rows[0]?.output_type);
+      } catch (_) {
+        selectedOutputType = 'pdf';
+      }
+    }
+
+    const filenameForJob = buildDocumentSyncFilename(
+      currentRow.patient_id,
+      templateNameForJob,
+      selectedOutputType
+    );
+
+    const documentJobPayload = {
+      sourceType: 'scribe_output',
+      sourceId: outputId,
+      outputId,
+      output_id: outputId,
+      outputType: selectedOutputType,
+      practiceId: rowPracticeId,
+      patientId: currentRow.patient_id,
+      consultationId: currentRow.consultation_id,
+      templateId: currentRow.template_id,
+      templateName: templateNameForJob,
+      finalMarkdown: normalizedFinalMarkdown,
+      finalMarkdownHash,
+      extractedTemplateVariables: extractedVars,
+    };
+
+    if (dev) {
+      console.log('[finalizeOutput] ensure document_sync_jobs row', {
+        outputId,
+        practiceId: rowPracticeId,
+        selectedOutputType,
+        filenameForJob,
+      });
+    }
+
+    try {
+      const existingJob = await client.query<{ id: string }>(
+        `
+          SELECT id::text AS id
+          FROM document_sync_jobs
+          WHERE scribe_output_id = $1::uuid
+            AND practice_id::text = $2
+          ORDER BY created_at ASC
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [outputId, rowPracticeId]
+      );
+
+      if (existingJob.rows.length === 0) {
         await client.query(
           `
-            INSERT INTO document_sync_jobs (scribe_output_id, practice_id, job_payload)
-            VALUES ($1::uuid, $2::uuid, $3::jsonb)
+            INSERT INTO document_sync_jobs (
+              scribe_output_id,
+              practice_id,
+              status,
+              attempts,
+              output_type,
+              filename,
+              job_payload
+            )
+            VALUES (
+              $1::uuid,
+              $2::uuid,
+              'pending',
+              0,
+              $3,
+              $4,
+              $5::jsonb
+            )
           `,
-          [outputId, rowPracticeId, JSON.stringify(documentJobPayload)]
+          [outputId, rowPracticeId, selectedOutputType, filenameForJob, JSON.stringify(documentJobPayload)]
         );
-        if (dev) {
-          console.log('[finalizeOutput] INSERT document_sync_jobs ok', { outputId });
-        }
-      } catch (jobErr) {
-        console.error('[finalizeOutput] document_sync_jobs INSERT failed', {
-          outputId,
-          ...serializePgErrorForDebug(jobErr),
-        });
-        throw jobErr;
       }
+
+      if (dev) {
+        console.log('[finalizeOutput] document_sync_jobs row ensured', {
+          outputId,
+          existed: existingJob.rows.length > 0,
+        });
+      }
+    } catch (jobErr) {
+      console.error('[finalizeOutput] document_sync_jobs ensure failed', {
+        outputId,
+        ...serializePgErrorForDebug(jobErr),
+      });
+      throw jobErr;
     }
 
     await client.query('COMMIT');

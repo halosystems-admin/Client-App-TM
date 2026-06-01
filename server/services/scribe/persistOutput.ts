@@ -10,6 +10,12 @@ export type PersistScribeOutputInput = {
   templateId: string;
   practiceId: string;
   patientId: string;
+  rawTranscript: string;
+  transcriptSource?: string;
+  transcriptLanguage?: string;
+  transcriptDurationSeconds?: number | null;
+  transcriptConfidence?: number | null;
+  transcriptMetadata?: Record<string, unknown>;
   systemFields: Record<string, string | null>;
   conditionalFields: Record<string, string | null>;
   /** From transcript requirement validation (see scribe_template_requirements). */
@@ -40,6 +46,21 @@ export async function persistScribeOutput(input: PersistScribeOutputInput): Prom
     systemFields: input.systemFields,
     extractedTemplateVariables: input.extractedTemplateVariables ?? undefined,
   });
+  const rawTranscript = String(input.rawTranscript || '').trim();
+  const transcriptSource = String(input.transcriptSource || '').trim() || 'unknown';
+  const transcriptLanguage = String(input.transcriptLanguage || '').trim() || 'unknown';
+  const transcriptDurationSeconds =
+    typeof input.transcriptDurationSeconds === 'number' && Number.isFinite(input.transcriptDurationSeconds)
+      ? input.transcriptDurationSeconds
+      : null;
+  const transcriptConfidence =
+    typeof input.transcriptConfidence === 'number' && Number.isFinite(input.transcriptConfidence)
+      ? input.transcriptConfidence
+      : null;
+  const transcriptMetadata =
+    input.transcriptMetadata && typeof input.transcriptMetadata === 'object' && !Array.isArray(input.transcriptMetadata)
+      ? input.transcriptMetadata
+      : {};
 
   const pool = getScribePool();
   const client = await pool.connect();
@@ -66,6 +87,12 @@ export async function persistScribeOutput(input: PersistScribeOutputInput): Prom
           template_id,
           practice_id,
           patient_id,
+          raw_transcript,
+          transcript_source,
+          transcript_language,
+          transcript_duration_seconds,
+          transcript_confidence,
+          transcript_metadata_json,
           system_fields_json,
           conditional_fields_json,
           extracted_template_variables_json,
@@ -83,16 +110,22 @@ export async function persistScribeOutput(input: PersistScribeOutputInput): Prom
           $3::uuid,
           $4::uuid,
           $5::uuid,
-          $6::jsonb,
-          $7::jsonb,
-          $8::jsonb,
+          $6,
+          $7,
+          $8,
           $9,
           $10,
+          $11::jsonb,
+          $12::jsonb,
+          $13::jsonb,
+          $14::jsonb,
+          $15,
+          $16,
           false,
-          $11,
-          $12,
-          $13,
-          $14
+          $17,
+          $18,
+          $19,
+          $20
         )
         RETURNING id::text AS id
       `,
@@ -102,6 +135,12 @@ export async function persistScribeOutput(input: PersistScribeOutputInput): Prom
         input.templateId,
         input.practiceId,
         input.patientId,
+        rawTranscript,
+        transcriptSource,
+        transcriptLanguage,
+        transcriptDurationSeconds,
+        transcriptConfidence,
+        JSON.stringify(transcriptMetadata),
         JSON.stringify(input.systemFields),
         JSON.stringify(input.conditionalFields),
         input.extractedTemplateVariables && Object.keys(input.extractedTemplateVariables).length > 0

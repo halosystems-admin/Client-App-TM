@@ -388,3 +388,48 @@ export interface ScribeFinalizedNote {
 export interface GetScribeFinalizedNotesResponse {
   notes: ScribeFinalizedNote[];
 }
+
+export interface ScribeTranscriptMetadata {
+  source: string;
+  language: string;
+  durationSeconds: number | null;
+  confidence: number | null;
+  providerMetadata: Record<string, unknown>;
+}
+
+export interface ScribeOutputRecord {
+  id: string;
+  consultationId: string;
+  practiceId: string;
+  patientId: string;
+  templateId: string;
+  rawTranscript: string;
+  rawMarkdown: string;
+  finalMarkdown: string;
+  doctorEdited: boolean;
+  transcript: ScribeTranscriptMetadata;
+  driveFileId?: string | null;
+}
+
+export type DocumentSyncJobStatus =
+  | 'pending'
+  | 'processing'
+  | 'resolved'
+  | 'failed';
+
+export interface DocumentSyncJobRecord {
+  id: string;
+  scribeOutputId: string;
+  practiceId: string;
+  status: DocumentSyncJobStatus;
+  attempts: number;
+  outputType: 'pdf' | 'docx' | 'pdf_fill' | string;
+  filename: string | null;
+  driveFileId: string | null;
+  driveUrl: string | null;
+  errorLog: string | null;
+  completedAt: string | null;
+  lastAttemptedAt: string | null;
+  updatedAt: string;
+  jobPayload: Record<string, unknown>;
+}

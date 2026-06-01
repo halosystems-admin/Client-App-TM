@@ -98,17 +98,18 @@ async function markJobFailure(
   message: string,
   maxAttempts: number
 ): Promise<void> {
+  const trimmedMessage = message.slice(0, 8000);
   await client.query(
     `
       UPDATE document_sync_jobs
       SET
-        attempts = attempts + 1,
         error_log = $2,
-        status = CASE WHEN attempts + 1 >= $3 THEN 'failed' ELSE 'pending' END,
+        status = CASE WHEN attempts >= $3 THEN 'failed' ELSE 'pending' END,
+        last_attempted_at = NOW(),
         updated_at = NOW()
       WHERE id = $1::uuid
     `,
-    [jobId, message.slice(0, 8000), maxAttempts]
+    [jobId, trimmedMessage, maxAttempts]
   );
 }
 
@@ -267,7 +268,8 @@ export async function processClaimedDocumentSyncJob(
         await client.query(
           `
           UPDATE scribe_outputs
-          SET pdf_filled_drive_id = $2
+          SET pdf_filled_drive_id = $2,
+              drive_file_id = $2
           WHERE id = $1::uuid
             AND practice_id::text = $3
         `,
@@ -287,13 +289,63 @@ export async function processClaimedDocumentSyncJob(
 
       await client.query(
         `
+          INSERT INTO documents (
+            patient_id,
+            practice_id,
+            consultation_id,
+            scribe_output_id,
+            type,
+            drive_file_id,
+            drive_url,
+            filename,
+            mime_type,
+            uploaded_at
+          )
+          SELECT
+            $1::uuid,
+            $2::uuid,
+            $3::uuid,
+            $4::uuid,
+            $5,
+            $6,
+            $7,
+            $8,
+            $9,
+            NOW()
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM documents
+            WHERE scribe_output_id = $4::uuid
+              AND drive_file_id = $6
+          )
+        `,
+        [
+          patientId,
+          practiceId,
+          consultationId,
+          scribeOutputId,
+          jobOutputType,
+          upload.driveFileId,
+          upload.driveViewUrl,
+          upload.fileName,
+          render.mimeType,
+        ]
+      );
+
+      await client.query(
+        `
         UPDATE document_sync_jobs
-        SET status = 'completed',
+        SET status = 'resolved',
+            drive_file_id = $2,
+            drive_url = $3,
+            filename = $4,
+            completed_at = NOW(),
+            last_attempted_at = NOW(),
             updated_at = NOW(),
             error_log = NULL
         WHERE id = $1::uuid
       `,
-        [jobId]
+        [jobId, upload.driveFileId, upload.driveViewUrl, upload.fileName]
       );
     } catch (e) {
       await markJobFailure(client, jobId, e instanceof Error ? e.message : String(e), maxAttempts);
