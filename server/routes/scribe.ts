@@ -684,6 +684,8 @@ router.post('/:outputId/finalize', async (req: Request, res: Response) => {
     const result = await finalizeScribeOutput(outputId, resolvedPractice.practiceId, parsed.data, {
       skipDocumentSyncJobs: skipQuery || skipHeader,
       requestHeaders: req.headers,
+      actorUserId: resolvedPractice.identity?.userId ?? null,
+      actorRole: resolvedPractice.identity?.role ?? null,
     });
 
     res.status(200).json({

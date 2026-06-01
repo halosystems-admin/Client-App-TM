@@ -27,11 +27,14 @@ export {
 export type FinalizeScribeOptions = {
   skipDocumentSyncJobs?: boolean;
   requestHeaders?: Record<string, string | string[] | undefined>;
+  actorUserId?: string | null;
+  actorRole?: string | null;
 };
 
 export type FinalizeScribeRequest = {
   finalMarkdown: string;
   doctorEdited: boolean;
+  doctorId?: string | null;
 };
 
 export type FinalizeScribeResult = {
@@ -54,6 +57,12 @@ type ScribeOutputRow = {
   latency_ms: number | null;
   system_fields_json: unknown;
   extracted_template_variables_json: unknown;
+};
+
+type UsersRow = {
+  id: string;
+  practice_id: string;
+  role: string | null;
 };
 
 function asStringRecord(value: unknown): Record<string, string | null> {
@@ -108,6 +117,18 @@ function pickDoctorEdited(body: Record<string, unknown>): boolean {
   if (typeof body.doctorEdited === 'boolean') return body.doctorEdited;
   if (typeof body.doctor_edited === 'boolean') return body.doctor_edited;
   return false;
+}
+
+function pickDoctorId(body: Record<string, unknown>): string | null {
+  const keys = ['doctorId', 'treatingDoctorId', 'responsibleDoctorId'] as const;
+  for (const key of keys) {
+    const value = body[key];
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) return trimmed;
+    }
+  }
+  return null;
 }
 
 function sanitizeFilenamePart(value: string): string {
@@ -189,6 +210,7 @@ export function validateFinalizeScribeRequest(
   const body = rawBody && typeof rawBody === 'object' ? (rawBody as Record<string, unknown>) : {};
   const finalMarkdown = pickFinalMarkdown(body);
   const doctorEdited = pickDoctorEdited(body);
+  const doctorId = pickDoctorId(body);
 
   if (!finalMarkdown) {
     return {
@@ -203,8 +225,92 @@ export function validateFinalizeScribeRequest(
     data: {
       finalMarkdown,
       doctorEdited,
+      doctorId,
     },
   };
+}
+
+async function loadDoctorUserById(
+  client: PoolClient,
+  practiceId: string,
+  userId: string
+): Promise<UsersRow | null> {
+  const result = await client.query<UsersRow>(
+    `
+      SELECT
+        id::text AS id,
+        practice_id::text AS practice_id,
+        role
+      FROM users
+      WHERE id = $1::uuid
+        AND practice_id::text = $2
+        AND role = 'doctor'
+      LIMIT 1
+    `,
+    [userId, practiceId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+async function resolveEventUserId(actorUserId: string | null | undefined): Promise<string | null> {
+  const cleaned = typeof actorUserId === 'string' ? actorUserId.trim() : '';
+  return cleaned || null;
+}
+
+async function resolveEventDoctorId(params: {
+  client: PoolClient;
+  practiceId: string;
+  actorUserId?: string | null;
+  actorRole?: string | null;
+  explicitDoctorId?: string | null;
+  dev: boolean;
+  outputId: string;
+}): Promise<string | null> {
+  const explicitDoctorId = typeof params.explicitDoctorId === 'string' ? params.explicitDoctorId.trim() : '';
+  if (explicitDoctorId) {
+    const explicitRow = await loadDoctorUserById(params.client, params.practiceId, explicitDoctorId);
+    if (explicitRow) {
+      return explicitRow.id;
+    }
+
+    if (params.dev) {
+      console.log('[finalizeOutput] explicit doctor_id rejected', {
+        outputId: params.outputId,
+        doctorId: explicitDoctorId,
+        practiceId: params.practiceId,
+      });
+    }
+  }
+
+  const actorUserId = typeof params.actorUserId === 'string' ? params.actorUserId.trim() : '';
+  const actorRole = typeof params.actorRole === 'string' ? params.actorRole.trim().toLowerCase() : '';
+  if (actorUserId && actorRole === 'doctor') {
+    const actorRow = await loadDoctorUserById(params.client, params.practiceId, actorUserId);
+    if (actorRow) {
+      return actorRow.id;
+    }
+
+    if (params.dev) {
+      console.log('[finalizeOutput] logged-in doctor_id could not be validated', {
+        outputId: params.outputId,
+        userId: actorUserId,
+        practiceId: params.practiceId,
+      });
+    }
+  }
+
+  if (params.dev) {
+    console.log('[finalizeOutput] doctor_id could not be resolved', {
+      outputId: params.outputId,
+      practiceId: params.practiceId,
+      hasExplicitDoctorId: Boolean(explicitDoctorId),
+      actorUserId: actorUserId || null,
+      actorRole: actorRole || null,
+    });
+  }
+
+  return null;
 }
 
 export async function finalizeScribeOutput(
@@ -284,6 +390,16 @@ export async function finalizeScribeOutput(
     }
 
     const rowPracticeId = currentRow.practice_id.trim();
+    const userId = await resolveEventUserId(options.actorUserId);
+    const doctorId = await resolveEventDoctorId({
+      client,
+      practiceId: rowPracticeId,
+      actorUserId: options.actorUserId ?? null,
+      actorRole: options.actorRole ?? null,
+      explicitDoctorId: input.doctorId ?? null,
+      dev,
+      outputId,
+    });
 
     const createIfMissingConsultation = process.env.NODE_ENV !== 'production';
     if (dev) {
@@ -369,6 +485,8 @@ export async function finalizeScribeOutput(
       content_md: normalizedFinalMarkdown,
       scribe_output_id: outputId,
       doctor_edited: input.doctorEdited,
+      user_id: userId,
+      doctor_id: doctorId,
     };
 
     if (dev) {
@@ -401,6 +519,8 @@ export async function finalizeScribeOutput(
               consultation_id,
               patient_id,
               practice_id,
+              user_id,
+              doctor_id,
               event_type,
               content_md,
               event_data
@@ -409,15 +529,19 @@ export async function finalizeScribeOutput(
               $1::uuid,
               $2::uuid,
               $3::uuid,
-              $4,
-              $5,
-              $6::jsonb
+              $4::uuid,
+              $5::uuid,
+              $6,
+              $7,
+              $8::jsonb
             )
           `,
           [
             currentRow.consultation_id,
             currentRow.patient_id,
             rowPracticeId,
+            userId,
+            doctorId,
             'scribe_output',
             normalizedFinalMarkdown,
             JSON.stringify(eventPayload),
@@ -431,9 +555,11 @@ export async function finalizeScribeOutput(
             SET consultation_id = $2::uuid,
                 patient_id = $3::uuid,
                 practice_id = $4::uuid,
+                user_id = $5::uuid,
+                doctor_id = $6::uuid,
                 event_type = 'scribe_output',
-                content_md = $5,
-                event_data = $6::jsonb
+                content_md = $7,
+                event_data = $8::jsonb
             WHERE id = $1::uuid
           `,
           [
@@ -441,6 +567,8 @@ export async function finalizeScribeOutput(
             currentRow.consultation_id,
             currentRow.patient_id,
             rowPracticeId,
+            userId,
+            doctorId,
             normalizedFinalMarkdown,
             JSON.stringify(eventPayload),
           ]
@@ -471,6 +599,8 @@ export async function finalizeScribeOutput(
       consultation_id: currentRow.consultation_id,
       patient_id: currentRow.patient_id,
       practice_id: rowPracticeId,
+      user_id: userId,
+      doctor_id: doctorId,
       template_id: currentRow.template_id,
       prompt_tokens: currentRow.prompt_tokens,
       completion_tokens: currentRow.completion_tokens,
@@ -486,6 +616,8 @@ export async function finalizeScribeOutput(
             consultation_id,
             patient_id,
             practice_id,
+            user_id,
+            doctor_id,
             event_type,
             event_data
           )
@@ -493,14 +625,18 @@ export async function finalizeScribeOutput(
             $1::uuid,
             $2::uuid,
             $3::uuid,
-            $4,
-            $5::jsonb
+            $4::uuid,
+            $5::uuid,
+            $6,
+            $7::jsonb
           )
         `,
         [
           currentRow.consultation_id,
           currentRow.patient_id,
           rowPracticeId,
+          userId,
+          doctorId,
           'scribe_usage_telemetry',
           JSON.stringify(usageTelemetryPayload),
         ]
