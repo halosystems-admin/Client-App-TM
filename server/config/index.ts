@@ -46,6 +46,7 @@ export const config = {
   // Drive API
   driveApi: 'https://www.googleapis.com/drive/v3',
   uploadApi: 'https://www.googleapis.com/upload/drive/v3',
+  documentSyncGoogleRootFolderId: process.env.DOCUMENT_SYNC_GOOGLE_ROOT_FOLDER_ID || '',
 
   // Google Calendar API
   calendarApi: 'https://www.googleapis.com/calendar/v3',

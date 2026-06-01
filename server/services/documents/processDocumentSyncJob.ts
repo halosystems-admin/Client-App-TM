@@ -218,6 +218,12 @@ export async function processClaimedDocumentSyncJob(
       }
     }
 
+    const documentSyncRootFolderId = config.documentSyncGoogleRootFolderId.trim();
+    if (!mockPipeline && !documentSyncRootFolderId) {
+      await markJobFailure(client, jobId, 'DOCUMENT_SYNC_GOOGLE_ROOT_FOLDER_ID not set', maxAttempts);
+      return;
+    }
+
     const renderInput = {
       finalMarkdown,
       outputType: jobOutputType,
@@ -251,7 +257,7 @@ export async function processClaimedDocumentSyncJob(
     try {
       upload = await deps.uploadScribeRenderedFile({
         accessToken,
-        patientFolderId: patientId,
+        patientFolderId: documentSyncRootFolderId,
         fileName: render.filename,
         mimeType: render.mimeType,
         buffer: render.buffer,
