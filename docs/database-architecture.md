@@ -22,8 +22,18 @@
 ```
 Google OAuth → session row in AWS RDS (DATABASE_URL)
 /api/auth/me → resolve user in halo-core (SCRIBE_DATABASE_URL) → session.practiceId
-/api/scribe/* → proxy or in-process → halo-core (SCRIBE_DATABASE_URL)
+/api/scribe/* → public app backend → proxy to canonical Scribe backend → halo-core (scribe-owned writes)
 ```
+
+## Public app Scribe routing
+
+The public production app is the user-facing shell. It should not write Scribe data itself in production.
+
+- Browser calls public app `/api/scribe/*` endpoints.
+- The public app backend proxies those requests to `https://halo-api-scribe-production-2002614584c0.herokuapp.com`.
+- The canonical Scribe backend owns transcript persistence, `scribe_outputs`, `consultation_events`, `document_sync_jobs`, and Drive document output.
+- Direct browser calls to the canonical Scribe backend are not the current production model.
+- In-process Scribe is development fallback only.
 
 ## Code entry points
 
@@ -41,6 +51,10 @@ Google OAuth → session row in AWS RDS (DATABASE_URL)
 | `halo-main` | AWS RDS | halo-core Supabase |
 | `halo-api-scribe-production` | halo-core Supabase | (optional; falls back to Supabase `DATABASE_URL`) |
 | `halo-client-tm` | (client build) | N/A |
+
+For the public app, `SCRIBE_SERVICE_URL` must point to the canonical Scribe backend URL:
+
+`https://halo-api-scribe-production-2002614584c0.herokuapp.com`
 
 ## Local development
 

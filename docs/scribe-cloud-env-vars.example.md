@@ -63,7 +63,7 @@
 | `DATABASE_URL` | **halo-main** prod | **Main app + session store** (currently AWS RDS). Not halo-core. | Yes | Yes | No |
 | `SCRIBE_DATABASE_URL` | **halo-main** prod | **halo-core Supabase** for Scribe templates, users, prompts, outputs. Required in bridge mode. | Yes | Yes | No |
 | `DATABASE_URL` | **halo-api-scribe-production** | halo-core Supabase (dedicated Scribe API) | Yes | Yes | No |
-| `SCRIBE_SERVICE_URL` | halo-main | Upstream Scribe API when proxying (`halo-api-scribe-production`) | No | No | No |
+| `SCRIBE_SERVICE_URL` | halo-main | Canonical Scribe backend URL when proxying. Must be `https://halo-api-scribe-production-2002614584c0.herokuapp.com` in production. | No | No | No |
 | `SESSION_SECRET` | Deploy | Session signing | Yes | Yes | No |
 | `FRONTEND_URL` / `CLIENT_URL` | Deploy | Staging/prod frontend origin for CORS | No | No | No |
 | `PRODUCTION_URL` | Prod OAuth | OAuth redirect base | No | No | No |
@@ -77,6 +77,30 @@
 | Name | Phase | Description | Secret | Never commit | Local-only phases OK |
 |------|-------|-------------|--------|--------------|----------------------|
 | `VITE_API_URL` | Client deploy | Staging/prod API base URL | No | No | No |
+
+---
+
+## Public app Scribe routing
+
+The public production app is the user-facing app. In the current production model, the browser does **not** call the canonical Scribe backend directly.
+
+```
+browser
+→ public app backend /api/scribe/*
+→ proxy to https://halo-api-scribe-production-2002614584c0.herokuapp.com
+```
+
+Production requirements:
+
+- `SCRIBE_SERVICE_URL` is required in production.
+- It must point to `https://halo-api-scribe-production-2002614584c0.herokuapp.com`.
+- It must not be blank or repointed at the public app itself.
+- In-process Scribe is development fallback only.
+
+Ownership:
+
+- Public app: browser/session/auth/UI.
+- Canonical Scribe backend: transcript persistence, `scribe_outputs`, `consultation_events`, `document_sync_jobs`, and Drive document output.
 
 ---
 

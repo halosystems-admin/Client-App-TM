@@ -10,6 +10,18 @@ This guide walks you through putting the HALO web app on a public URL (e.g. `htt
 - **Single URL**: Use one base URL (e.g. `https://app.halo.africa`) for both the site and the API — no need for a separate API subdomain unless you want one.
 - **HTTPS**: Required for Google OAuth and secure cookies. Use a reverse proxy (e.g. Caddy or nginx) with a TLS certificate.
 
+### Public Scribe routing
+
+The public production app is the user-facing app. Scribe generation and finalization are routed through the public app backend, which proxies to the canonical Scribe backend.
+
+```
+browser
+→ public app backend /api/scribe/*
+→ https://halo-api-scribe-production-2002614584c0.herokuapp.com
+```
+
+Do not point the browser directly at the canonical Scribe backend in the current production model.
+
 ---
 
 ## 1. Choose a hostname and hosting
@@ -62,6 +74,10 @@ GEMINI_API_KEY=<your-key>
 # --- Halo Functions API (recommended) ---
 HALO_API_BASE_URL=https://halo-functions-75316778879.africa-south1.run.app
 
+# --- Canonical Scribe backend ---
+# Required in production for the public app backend.
+SCRIBE_SERVICE_URL=https://halo-api-scribe-production-2002614584c0.herokuapp.com
+
 # --- Optional email delivery / template requests (SMTP) ---
 # Configure these to move health from partial -> ok for smtp check
 ADMIN_EMAIL=admin@halo.africa
@@ -85,6 +101,14 @@ If the browser talks to e.g. `https://api.halo.africa`, set in the **client** bu
   (and then `CLIENT_URL` / `PRODUCTION_URL` would be the frontend URL).
 
 For a single URL, leave `VITE_API_URL` unset.
+
+### Scribe ownership and safety
+
+- The public app is the user-facing shell.
+- The canonical Scribe backend owns transcript persistence, `scribe_outputs`, `consultation_events`, `document_sync_jobs`, and Drive document output.
+- Do not blank `SCRIBE_SERVICE_URL` in production.
+- Do not point `SCRIBE_SERVICE_URL` back at the public app itself.
+- In-process Scribe is for development fallback only.
 
 ---
 
@@ -229,6 +253,11 @@ If you use Railway, Render, Fly.io, etc.:
 - [ ] `npm run build` succeeds
 - [ ] Production `.env` with `NODE_ENV=production`, `CLIENT_URL`, `PRODUCTION_URL`, `SESSION_SECRET`, Google and Gemini keys
 - [ ] Optional but recommended: `HALO_API_BASE_URL` set
+- [ ] `SCRIBE_SERVICE_URL=https://halo-api-scribe-production-2002614584c0.herokuapp.com` set on the public app backend
+- [ ] Startup logs show Scribe proxy mode, not in-process fallback
+- [ ] Scribe templates load in the UI
+- [ ] Generate and finalize a note successfully
+- [ ] Confirm the canonical Scribe backend wrote the expected rows
 - [ ] Optional SMTP readiness: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (+ `SMTP_PORT`, `SMTP_SECURE`, `ADMIN_EMAIL`)
 - [ ] Google OAuth: authorized origins and redirect URI for `https://<your-host>/api/auth/callback`
 - [ ] DNS: A or CNAME for your hostname → server or PaaS
