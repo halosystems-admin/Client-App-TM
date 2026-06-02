@@ -83,6 +83,17 @@ function validateScribeServiceUrlOrThrow(): void {
   }
 }
 
+function validateScribeInternalServiceSecretOrThrow(): void {
+  if (!isProductionRuntime()) {
+    return;
+  }
+
+  const secret = (process.env.SCRIBE_INTERNAL_SERVICE_SECRET || '').trim();
+  if (!secret) {
+    throw new Error('SCRIBE_INTERNAL_SERVICE_SECRET is required in production.');
+  }
+}
+
 /**
  * Public app: browser -> public app backend -> canonical Scribe backend.
  * In development, the app may fall back to in-process Scribe only when no upstream is configured.
@@ -118,6 +129,7 @@ export function validateAndLogDatabaseTargets(options: {
 
   try {
     validateScribeServiceUrlOrThrow();
+    validateScribeInternalServiceSecretOrThrow();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[startup] Scribe upstream configuration error', { message });

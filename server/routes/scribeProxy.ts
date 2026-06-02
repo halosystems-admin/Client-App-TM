@@ -20,6 +20,60 @@ const HOP_BY_HOP_HEADERS = new Set([
   'host',
 ]);
 
+const INTERNAL_HEADER_PREFIX = 'x-halo-';
+const CANONICAL_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type TrustedScribeIdentity = {
+  userId: string;
+  practiceId: string;
+  doctorId: string;
+  userEmail: string;
+};
+
+function trimString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isCanonicalUuid(value: string): boolean {
+  return CANONICAL_UUID_PATTERN.test(value.trim());
+}
+
+function getInternalServiceSecret(): string {
+  return trimString(process.env.SCRIBE_INTERNAL_SERVICE_SECRET);
+}
+
+function resolveTrustedScribeIdentity(req: Request): TrustedScribeIdentity | null {
+  const session = req.session as {
+    scribeUserId?: string;
+    practiceId?: string;
+    userEmail?: string;
+    userId?: string;
+  };
+
+  const scribeUserId = trimString(session.scribeUserId);
+  const practiceId = trimString(session.practiceId);
+  const userEmail = trimString(session.userEmail);
+  const fallbackUserId = trimString(session.userId);
+
+  if (!scribeUserId || !practiceId || !userEmail) {
+    return null;
+  }
+
+  const userId = scribeUserId || (isCanonicalUuid(fallbackUserId) ? fallbackUserId : '');
+  const doctorId = scribeUserId;
+
+  if (!userId || !doctorId) {
+    return null;
+  }
+
+  return {
+    userId,
+    practiceId,
+    doctorId,
+    userEmail,
+  };
+}
+
 function getScribeServiceBaseUrl(): string {
   return (config.scribeServiceUrl || '').trim().replace(/\/$/, '');
 }
@@ -36,6 +90,7 @@ function buildForwardHeaders(req: Request): Record<string, string> {
   for (const [key, value] of Object.entries(req.headers)) {
     const normalizedKey = key.toLowerCase();
     if (HOP_BY_HOP_HEADERS.has(normalizedKey)) continue;
+    if (normalizedKey.startsWith(INTERNAL_HEADER_PREFIX)) continue;
     if (value === undefined || value === null) continue;
 
     if (Array.isArray(value)) {
@@ -46,9 +101,19 @@ function buildForwardHeaders(req: Request): Record<string, string> {
     headers[key] = String(value);
   }
 
-  if (req.headers.cookie) {
-    headers.cookie = req.headers.cookie;
+  const identity = resolveTrustedScribeIdentity(req);
+  if (!identity) {
+    return headers;
   }
+
+  const internalSecret = getInternalServiceSecret();
+  if (internalSecret) {
+    headers['x-halo-internal-secret'] = internalSecret;
+  }
+  headers['x-halo-user-id'] = identity.userId;
+  headers['x-halo-practice-id'] = identity.practiceId;
+  headers['x-halo-doctor-id'] = identity.doctorId;
+  headers['x-halo-user-email'] = identity.userEmail;
 
   return headers;
 }
@@ -65,6 +130,17 @@ async function proxyScribeRequest(req: Request, res: Response): Promise<void> {
   const upstreamUrl = buildUpstreamUrl(req);
   if (!upstreamUrl) {
     res.status(503).json({ error: 'Scribe service is not configured.' });
+    return;
+  }
+
+  if ((process.env.NODE_ENV === 'production' || config.isProduction) && !getInternalServiceSecret()) {
+    res.status(500).json({ error: 'Scribe service is not configured.' });
+    return;
+  }
+
+  const identity = resolveTrustedScribeIdentity(req);
+  if (!identity) {
+    res.status(403).json({ error: 'Forbidden: Scribe session is missing user or practice identity.' });
     return;
   }
 
