@@ -375,7 +375,19 @@ export const createFolder = (parentId: string, name: string) =>
   });
 
 // --- AI ---
-export const generatePatientSummary = async (patientName: string, files: DriveFile[], patientId?: string): Promise<string[]> => {
+export const generatePatientSummary = async (
+  patientName: string,
+  files: DriveFile[],
+  patientId?: string
+): Promise<string[]> => {
+  if (patientId) {
+    const data = await request<{ state?: { snapshot?: unknown } }>(`/api/drive/patients/${patientId}/summary`, {
+      method: 'GET',
+    });
+    const snapshot = data.state?.snapshot;
+    return Array.isArray(snapshot) ? snapshot.map((item) => String(item || '').trim()).filter(Boolean) : [];
+  }
+
   return request<string[]>('/api/ai/summary', {
     method: 'POST',
     body: JSON.stringify({ patientName, patientId, files }),

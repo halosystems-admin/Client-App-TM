@@ -1267,7 +1267,7 @@ export const PatientWorkspace: React.FC<Props> = ({
     }
   };
 
-  const hasAiContent = alerts.length > 0 || summary.length > 0;
+  const hasAiContent = alerts.length > 0 || summary.length > 0 || summaryLoading || summaryUnavailable;
 
   const closeChatSheet = () => setChatSheetOpen(false);
 
