@@ -143,11 +143,9 @@ if (scribeRouteMode === 'proxy') {
     upstream: scribeServiceUrl.replace(/:[^:@/]+@/, ':***@'),
   });
 } else if (scribeServiceUrl) {
-  console.log(
-    '[scribe] Using in-process Scribe routes (bridge: SCRIBE_DATABASE_URL; upstream URL not used for session-bound API)'
-  );
+  console.log('[scribe] Using in-process Scribe routes (development fallback)');
 } else {
-  console.log('[scribe] Using in-process Scribe routes (halo-core via SCRIBE_DATABASE_URL)');
+  console.log('[scribe] Using in-process Scribe routes (no upstream configured)');
 }
 app.use('/api/scribe', requireAuth, scribeRoutes);
 
